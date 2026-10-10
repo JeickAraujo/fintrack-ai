@@ -1,0 +1,77 @@
+import { NextResponse } from 'next/server';
+import crypto from 'crypto';
+import { getSessionFromRequest } from '@/lib/auth';
+import { queryAll, execute } from '@/lib/db';
+import { dollarsToCents } from '@/lib/currency';
+
+export async function GET(req: Request) {
+  const session = await getSessionFromRequest(req);
+  if (!session) return NextResponse.json({ error: 'No autorizado' }, { status: 401 });
+
+  const { searchParams } = new URL(req.url);
+  const month = searchParams.get('month') || new Date().toISOString().substring(0, 7);
+
+  // Obtener presupuestos con el gasto real acumulado por categoría
+  const budgets = await queryAll(
+    `SELECT b.*, c.name as category_name, c.color as category_color, c.icon as category_icon,
+            COALESCE((
+              SELECT SUM(t.amount_cents) 
+              FROM transactions t 
+              WHERE t.user_id = b.user_id 
+                AND t.category_id = b.category_id 
+                AND t.type IN ('EXPENSE', 'CREDIT_PURCHASE')
+                AND t.date LIKE ?
+            ), 0) as spent_cents
+     FROM budgets b
+     JOIN categories c ON b.category_id = c.id
+     WHERE b.user_id = ? AND b.month_year = ?`,
+    [`${month}%`, session.id, month]
+  );
+
+  const categories = await queryAll(
+    `SELECT * FROM categories WHERE user_id = ? OR is_system = 1 ORDER BY type ASC, name ASC`,
+    [session.id]
+  );
+
+  return NextResponse.json({ budgets, categories, month });
+}
+
+export async function POST(req: Request) {
+  const session = await getSessionFromRequest(req);
+  if (!session) return NextResponse.json({ error: 'No autorizado' }, { status: 401 });
+
+  try {
+    const body = await req.json();
+    const { categoryId, monthYear, allocatedAmount } = body;
+
+    if (!categoryId || !monthYear || allocatedAmount === undefined) {
+      return NextResponse.json({ error: 'Categoría, mes y monto presupuestado requeridos' }, { status: 400 });
+    }
+
+    const allocatedCents = dollarsToCents(allocatedAmount);
+    const existing = await queryAll(
+      `SELECT id FROM budgets WHERE user_id = ? AND category_id = ? AND month_year = ?`,
+      [session.id, categoryId, monthYear]
+    );
+
+    const now = new Date().toISOString();
+    if (existing.length > 0) {
+      await execute(
+        `UPDATE budgets SET allocated_cents = ? WHERE id = ?`,
+        [allocatedCents, existing[0].id]
+      );
+      return NextResponse.json({ success: true, updated: true });
+    } else {
+      const id = crypto.randomUUID();
+      await execute(
+        `INSERT INTO budgets (id, user_id, category_id, month_year, allocated_cents, created_at)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+        [id, session.id, categoryId, monthYear, allocatedCents, now]
+      );
+      return NextResponse.json({ success: true, budgetId: id });
+    }
+  } catch (err: any) {
+    console.error('Budgets POST error:', err);
+    return NextResponse.json({ error: 'Error guardando presupuesto' }, { status: 500 });
+  }
+}

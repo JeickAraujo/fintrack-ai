@@ -1,0 +1,15 @@
+services:
+  fintrack:
+    build: .
+    container_name: fintrack-ai
+    restart: always
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - JWT_SECRET=fintrack_ai_super_secret_production_key_2026
+    volumes:
+      - fintrack_data:/app/data
+
+volumes:
+  fintrack_data:
