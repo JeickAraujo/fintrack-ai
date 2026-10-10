@@ -42,15 +42,18 @@ export async function POST(req: Request) {
 
         if (authError) {
           console.error('[Supabase Auth Register Error]:', authError.message, authError.status);
-          const isDev = process.env.NODE_ENV !== 'production';
+          let userFriendly = authError.message;
+          if (authError.message.toLowerCase().includes('already registered')) {
+            userFriendly = 'Este correo electrónico ya tiene una cuenta registrada.';
+          } else if (authError.message.toLowerCase().includes('rate limit')) {
+            userFriendly = 'Demasiados intentos. Espera unos momentos antes de reintentar.';
+          } else if (authError.message.toLowerCase().includes('password')) {
+            userFriendly = 'La contraseña debe tener al menos 6 caracteres.';
+          }
           return NextResponse.json(
             {
-              error: isDev
-                ? `Error en Supabase: ${authError.message}`
-                : authError.message.includes('already registered')
-                ? 'El usuario ya existe con este correo electrónico'
-                : 'Error procesando solicitud de registro en Supabase.',
-              details: isDev ? authError.message : undefined,
+              error: userFriendly,
+              details: authError.message,
             },
             { status: 400 }
           );
