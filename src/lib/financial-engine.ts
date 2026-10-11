@@ -110,7 +110,7 @@ export async function getDashboardMetrics(userId: string, targetMonthYear?: stri
   const monthlyIncome = await queryOne<{ total: number }>(
     `SELECT COALESCE(SUM(amount_cents), 0) as total 
      FROM transactions 
-     WHERE user_id = ? AND type = 'INCOME' AND date LIKE ?`,
+     WHERE user_id = ? AND type = 'INCOME' AND date::text LIKE ?`,
     [userId, `${currentMonth}%`]
   );
 
@@ -118,7 +118,7 @@ export async function getDashboardMetrics(userId: string, targetMonthYear?: stri
   const monthlyExpense = await queryOne<{ total: number }>(
     `SELECT COALESCE(SUM(amount_cents), 0) as total 
      FROM transactions 
-     WHERE user_id = ? AND type IN ('EXPENSE', 'CREDIT_PURCHASE') AND date LIKE ?`,
+     WHERE user_id = ? AND type IN ('EXPENSE', 'CREDIT_PURCHASE') AND date::text LIKE ?`,
     [userId, `${currentMonth}%`]
   );
 
@@ -126,7 +126,7 @@ export async function getDashboardMetrics(userId: string, targetMonthYear?: stri
   const committedObligations = await queryOne<{ total: number }>(
     `SELECT COALESCE(SUM(amount_cents), 0) as total 
      FROM payment_obligations 
-     WHERE user_id = ? AND status IN ('PENDING', 'DUE_SOON', 'OVERDUE') AND due_date LIKE ?`,
+     WHERE user_id = ? AND status IN ('PENDING', 'DUE_SOON', 'OVERDUE') AND due_date::text LIKE ?`,
     [userId, `${currentMonth}%`]
   );
 
@@ -134,7 +134,7 @@ export async function getDashboardMetrics(userId: string, targetMonthYear?: stri
   const prevMonthExpense = await queryOne<{ total: number }>(
     `SELECT COALESCE(SUM(amount_cents), 0) as total 
      FROM transactions 
-     WHERE user_id = ? AND type IN ('EXPENSE', 'CREDIT_PURCHASE') AND date LIKE ?`,
+     WHERE user_id = ? AND type IN ('EXPENSE', 'CREDIT_PURCHASE') AND date::text LIKE ?`,
     [userId, `${prevMonthStr}%`]
   );
 

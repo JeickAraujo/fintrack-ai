@@ -65,8 +65,8 @@ export async function askCopilot(userId: string, question: string, currency: str
       `SELECT c.name, COALESCE(SUM(t.amount_cents), 0) as total, c.color
        FROM transactions t
        JOIN categories c ON t.category_id = c.id
-       WHERE t.user_id = ? AND t.type IN ('EXPENSE', 'CREDIT_PURCHASE') AND t.date LIKE ?
-       GROUP BY c.id
+       WHERE t.user_id = ? AND t.type IN ('EXPENSE', 'CREDIT_PURCHASE') AND t.date::text LIKE ?
+       GROUP BY c.id, c.name, c.color
        ORDER BY total DESC
        LIMIT 5`,
       [userId, `${currentMonth}%`]
@@ -82,7 +82,7 @@ export async function askCopilot(userId: string, question: string, currency: str
     const totalExpenseRow = await queryOne<{ total: number }>(
       `SELECT COALESCE(SUM(amount_cents), 0) as total 
        FROM transactions 
-       WHERE user_id = ? AND type IN ('EXPENSE', 'CREDIT_PURCHASE') AND date LIKE ?`,
+       WHERE user_id = ? AND type IN ('EXPENSE', 'CREDIT_PURCHASE') AND date::text LIKE ?`,
       [userId, `${currentMonth}%`]
     );
     const totalMonth = totalExpenseRow?.total || 1;
@@ -167,7 +167,7 @@ export async function askCopilot(userId: string, question: string, currency: str
                 WHERE t.user_id = b.user_id 
                   AND t.category_id = b.category_id 
                   AND t.type IN ('EXPENSE', 'CREDIT_PURCHASE')
-                  AND t.date LIKE ?
+                  AND t.date::text LIKE ?
               ), 0) as spent_cents
        FROM budgets b
        JOIN categories c ON b.category_id = c.id

@@ -6,35 +6,44 @@ import { dollarsToCents } from '@/lib/currency';
 import { getBogotaCurrentMonth } from '@/lib/financial-engine';
 
 export async function GET(req: Request) {
-  const session = await getSessionFromRequest(req);
-  if (!session) return NextResponse.json({ error: 'No autorizado' }, { status: 401 });
+  try {
+    const session = await getSessionFromRequest(req);
+    if (!session) return NextResponse.json({ error: 'No autorizado' }, { status: 401 });
 
-  const { searchParams } = new URL(req.url);
-  const month = searchParams.get('month') || getBogotaCurrentMonth();
+    const { searchParams } = new URL(req.url);
+    const month = searchParams.get('month') || getBogotaCurrentMonth();
 
-  // Obtener presupuestos con el gasto real acumulado por categoría
-  const budgets = await queryAll(
-    `SELECT b.*, c.name as category_name, c.color as category_color, c.icon as category_icon,
-            COALESCE((
-              SELECT SUM(t.amount_cents) 
-              FROM transactions t 
-              WHERE t.user_id = b.user_id 
-                AND t.category_id = b.category_id 
-                AND t.type IN ('EXPENSE', 'CREDIT_PURCHASE')
-                AND t.date LIKE ?
-            ), 0) as spent_cents
-     FROM budgets b
-     JOIN categories c ON b.category_id = c.id
-     WHERE b.user_id = ? AND b.month_year = ?`,
-    [`${month}%`, session.id, month]
-  );
+    // Obtener presupuestos con el gasto real acumulado por categoría
+    // Nota: Usamos date::text LIKE $1 para máxima compatibilidad Postgres y SQLite
+    const budgets = await queryAll(
+      `SELECT b.*, c.name as category_name, c.color as category_color, c.icon as category_icon,
+              COALESCE((
+                SELECT SUM(t.amount_cents) 
+                FROM transactions t 
+                WHERE t.user_id = b.user_id 
+                  AND t.category_id = b.category_id 
+                  AND t.type IN ('EXPENSE', 'CREDIT_PURCHASE')
+                  AND t.date::text LIKE ?
+              ), 0) as spent_cents
+       FROM budgets b
+       JOIN categories c ON b.category_id = c.id
+       WHERE b.user_id = ? AND b.month_year = ?`,
+      [`${month}%`, session.id, month]
+    );
 
-  const categories = await queryAll(
-    `SELECT * FROM categories WHERE user_id = ? OR is_system = 1 ORDER BY type ASC, name ASC`,
-    [session.id]
-  );
+    const categories = await queryAll(
+      `SELECT * FROM categories WHERE user_id = ? OR is_system = 1 ORDER BY type ASC, name ASC`,
+      [session.id]
+    );
 
-  return NextResponse.json({ budgets, categories, month });
+    return NextResponse.json({ budgets, categories, month });
+  } catch (err: any) {
+    console.error('Budgets GET error:', err);
+    return NextResponse.json(
+      { error: 'Error cargando presupuestos: ' + (err?.message || String(err)), budgets: [], categories: [] },
+      { status: 500 }
+    );
+  }
 }
 
 export async function POST(req: Request) {
@@ -73,6 +82,6 @@ export async function POST(req: Request) {
     }
   } catch (err: any) {
     console.error('Budgets POST error:', err);
-    return NextResponse.json({ error: 'Error guardando presupuesto' }, { status: 500 });
+    return NextResponse.json({ error: 'Error guardando presupuesto: ' + (err?.message || String(err)) }, { status: 500 });
   }
 }
