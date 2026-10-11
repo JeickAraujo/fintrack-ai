@@ -102,7 +102,7 @@ export async function getDashboardMetrics(userId: string, targetMonthYear?: stri
   const assetAccounts = await queryOne<{ total: number }>(
     `SELECT COALESCE(SUM(current_balance_cents), 0) as total 
      FROM accounts 
-     WHERE user_id = ? AND type != 'CREDIT_CARD' AND is_active = 1`,
+     WHERE user_id = ? AND type != 'CREDIT_CARD' AND is_active IS TRUE`,
     [userId]
   );
 

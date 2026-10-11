@@ -71,7 +71,7 @@ export async function parseBankCsv(
 
   // Cargar categorías existentes del usuario para clasificación inteligente
   const categories = await queryAll<{ id: string; name: string; keywords: string; type: string }>(
-    `SELECT id, name, keywords, type FROM categories WHERE user_id = ? OR is_system = 1`,
+    `SELECT id, name, keywords, type FROM categories WHERE user_id = ? OR is_system IS TRUE`,
     [userId]
   );
 

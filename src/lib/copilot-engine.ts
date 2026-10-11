@@ -118,7 +118,7 @@ export async function askCopilot(userId: string, question: string, currency: str
     norm.includes('saldo disponible')
   ) {
     const userAccounts = await queryAll<{ name: string; type: string; current_balance_cents: number; color: string }>(
-      `SELECT name, type, current_balance_cents, color FROM accounts WHERE user_id = ? AND is_active = 1 ORDER BY current_balance_cents DESC`,
+      `SELECT name, type, current_balance_cents, color FROM accounts WHERE user_id = ? AND is_active IS TRUE ORDER BY current_balance_cents DESC`,
       [userId]
     );
 
@@ -248,7 +248,7 @@ export async function askCopilot(userId: string, question: string, currency: str
     const subscriptions = await queryAll<{ name: string; amount_cents: number; due_date: string; frequency: string }>(
       `SELECT name, amount_cents, due_date, frequency 
        FROM payment_obligations 
-       WHERE user_id = ? AND is_subscription = 1 AND status != 'CANCELLED'`,
+       WHERE user_id = ? AND is_subscription IS TRUE AND status != 'CANCELLED'`,
       [userId]
     );
 

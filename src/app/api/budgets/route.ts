@@ -1,7 +1,7 @@
 export const dynamic = 'force-dynamic';
 import { NextResponse } from 'next/server';
 import crypto from 'crypto';
-import { getSessionFromRequest } from '@/lib/auth';
+import { getSessionFromRequest, ensureDefaultUserCategories } from '@/lib/auth';
 import { queryAll, execute } from '@/lib/db';
 import { dollarsToCents } from '@/lib/currency';
 import { getBogotaCurrentMonth } from '@/lib/financial-engine';
@@ -15,7 +15,7 @@ export async function GET(req: Request) {
     const month = searchParams.get('month') || getBogotaCurrentMonth();
 
     // Obtener presupuestos con el gasto real acumulado por categoría
-    // Nota: Usamos date::text LIKE $1 para máxima compatibilidad Postgres y SQLite
+    // Usamos date::text LIKE $1 para máxima compatibilidad Postgres y SQLite
     const budgets = await queryAll(
       `SELECT b.*, c.name as category_name, c.color as category_color, c.icon as category_icon,
               COALESCE((
@@ -32,10 +32,19 @@ export async function GET(req: Request) {
       [`${month}%`, session.id, month]
     );
 
-    const categories = await queryAll(
-      `SELECT * FROM categories WHERE user_id = ? OR is_system = 1 ORDER BY type ASC, name ASC`,
+    let categories = await queryAll(
+      `SELECT * FROM categories WHERE user_id = ? OR is_system IS TRUE ORDER BY type ASC, name ASC`,
       [session.id]
     );
+
+    // Auto-reparación preventiva si el usuario no tiene categorías sembradas
+    if (categories.length === 0) {
+      await ensureDefaultUserCategories(session.id);
+      categories = await queryAll(
+        `SELECT * FROM categories WHERE user_id = ? OR is_system IS TRUE ORDER BY type ASC, name ASC`,
+        [session.id]
+      );
+    }
 
     return NextResponse.json({ budgets, categories, month });
   } catch (err: any) {

@@ -1,7 +1,7 @@
 export const dynamic = 'force-dynamic';
 import { NextResponse } from 'next/server';
 import crypto from 'crypto';
-import { getSessionFromRequest } from '@/lib/auth';
+import { getSessionFromRequest, ensureDefaultAccount } from '@/lib/auth';
 import { queryAll, execute } from '@/lib/db';
 import { dollarsToCents } from '@/lib/currency';
 
@@ -10,10 +10,20 @@ export async function GET(req: Request) {
     const session = await getSessionFromRequest(req);
     if (!session) return NextResponse.json({ error: 'No autorizado' }, { status: 401 });
 
-    const accounts = await queryAll(
-      `SELECT * FROM accounts WHERE user_id = ? AND is_active = 1 ORDER BY created_at ASC`,
+    let accounts = await queryAll(
+      `SELECT * FROM accounts WHERE user_id = ? AND is_active IS TRUE ORDER BY created_at ASC`,
       [session.id]
     );
+
+    // Auto-reparación preventiva si el usuario no tiene ninguna cuenta activa
+    if (accounts.length === 0) {
+      await ensureDefaultAccount(session.id);
+      accounts = await queryAll(
+        `SELECT * FROM accounts WHERE user_id = ? AND is_active IS TRUE ORDER BY created_at ASC`,
+        [session.id]
+      );
+    }
+
     return NextResponse.json({ accounts });
   } catch (err: any) {
     console.error('Accounts GET error:', err);
@@ -43,7 +53,7 @@ export async function POST(req: Request) {
 
     await execute(
       `INSERT INTO accounts (id, user_id, name, type, initial_balance_cents, current_balance_cents, credit_limit_cents, color, is_active, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?)`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, true, ?)`,
       [id, session.id, name.trim(), type, initialBalanceCents, initialBalanceCents, creditLimitCents, color, now]
     );
 

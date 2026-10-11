@@ -65,7 +65,7 @@ export async function POST(req: Request) {
       status = 'CLEARED',
       notes = '',
       source = 'MANUAL',
-      isRecurring = 0,
+      isRecurring = false,
     } = body;
 
     if (!accountId || !type || !amountCents || !description || !date) {
@@ -97,20 +97,22 @@ export async function POST(req: Request) {
         status,
         notes,
         source,
-        isRecurring ? 1 : 0,
+        Boolean(isRecurring),
         now,
       ]
     );
 
-    // Recalcular saldos de forma determinista
+    // Recalcular saldo de la cuenta de origen
     await recalculateAccountBalance(accountId);
-    if (destinationAccountId) {
+
+    // Si es transferencia, recalcular también la de destino
+    if (type === 'TRANSFER' && destinationAccountId) {
       await recalculateAccountBalance(destinationAccountId);
     }
 
     return NextResponse.json({ success: true, transactionId: id });
   } catch (err: any) {
     console.error('Transactions POST error:', err);
-    return NextResponse.json({ error: 'Error registrando movimiento: ' + (err?.message || String(err)) }, { status: 500 });
+    return NextResponse.json({ error: 'Error creando transacción: ' + (err?.message || String(err)) }, { status: 500 });
   }
 }

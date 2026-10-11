@@ -92,7 +92,7 @@ export async function POST(req: Request) {
     await execute(
       `INSERT INTO payment_obligations (id, user_id, name, amount_cents, due_date, frequency, category_id, account_id, status, is_subscription, created_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'PENDING', ?, ?)`,
-      [id, session.id, name.trim(), amountCents, dueDate, frequency, categoryId || null, accountId || null, isSubscription ? 1 : 0, now]
+      [id, session.id, name.trim(), amountCents, dueDate, frequency, categoryId || null, accountId || null, Boolean(isSubscription), now]
     );
 
     return NextResponse.json({ success: true, obligationId: id });
@@ -123,7 +123,7 @@ export async function PUT(req: Request) {
       `UPDATE payment_obligations 
        SET name = ?, amount_cents = ?, due_date = ?, frequency = ?, category_id = ?, account_id = ?, is_subscription = ?
        WHERE id = ? AND user_id = ?`,
-      [name.trim(), amountCents, dueDate, frequency, categoryId || null, accountId || null, isSubscription ? 1 : 0, id, session.id]
+      [name.trim(), amountCents, dueDate, frequency, categoryId || null, accountId || null, Boolean(isSubscription), id, session.id]
     );
 
     return NextResponse.json({ success: true, updated: true });

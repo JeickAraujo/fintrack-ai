@@ -88,7 +88,7 @@ export default function ObligationsPage() {
     setFormFrequency(item.frequency || 'MONTHLY');
     setFormCategoryId(item.category_id || '');
     setFormAccountId(item.account_id || (accounts[0]?.id || ''));
-    setFormIsSub(item.is_subscription === 1);
+    setFormIsSub(Boolean(item.is_subscription));
     setErrorMsg(null);
     setShowModal(true);
   };
@@ -273,7 +273,7 @@ export default function ObligationsPage() {
                       </span>
 
                       <div className="flex items-center gap-1.5">
-                        {item.is_subscription === 1 && (
+                        {Boolean(item.is_subscription) && (
                           <span className="text-[10px] bg-pink-500/10 text-pink-400 px-2 py-0.5 rounded font-semibold">
                             Suscripción
                           </span>

@@ -2,7 +2,7 @@ export const dynamic = 'force-dynamic';
 import { NextResponse } from 'next/server';
 import crypto from 'crypto';
 import { queryOne, execute } from '@/lib/db';
-import { hashPassword, verifyPassword, signToken, seedDefaultUserCategories } from '@/lib/auth';
+import { hashPassword, verifyPassword, signToken, seedDefaultUserCategories, ensureDefaultUserCategories, ensureDefaultAccount } from '@/lib/auth';
 
 export async function POST(req: Request) {
   try {
@@ -52,7 +52,7 @@ export async function POST(req: Request) {
         const defaultAccountId = crypto.randomUUID();
         await execute(
           `INSERT INTO accounts (id, user_id, name, type, initial_balance_cents, current_balance_cents, color, is_active, created_at)
-           VALUES (?, ?, ?, 'CHECKING', 0, 0, '#10b981', 1, ?)`,
+           VALUES (?, ?, ?, 'CHECKING', 0, 0, '#10b981', true, ?)`,
           [defaultAccountId, userId, 'Cuenta Principal', now]
         );
       } catch (dbErr: any) {
@@ -88,6 +88,10 @@ export async function POST(req: Request) {
     if (!user || !verifyPassword(password, user.password_hash)) {
       return NextResponse.json({ error: 'Credenciales inválidas' }, { status: 401 });
     }
+
+    // Auto-reparación preventiva si el usuario se registró previamente con errores de seeding
+    await ensureDefaultUserCategories(user.id);
+    await ensureDefaultAccount(user.id);
 
     const sessionUser = { id: user.id, name: user.name, email: user.email, currency: user.currency };
     const token = signToken(sessionUser);

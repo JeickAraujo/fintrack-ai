@@ -109,8 +109,46 @@ export async function seedDefaultUserCategories(userId: string): Promise<void> {
     const now = new Date().toISOString();
     await execute(
       `INSERT INTO categories (id, user_id, name, type, icon, color, keywords, is_system, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?)`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, true, ?)`,
       [id, userId, cat.name, cat.type, cat.icon, cat.color, cat.keywords, now]
     );
+  }
+}
+
+/**
+ * Asegura que el usuario tenga categorías por defecto (auto-reparación en caso de cuentas previas)
+ */
+export async function ensureDefaultUserCategories(userId: string): Promise<void> {
+  try {
+    const existing = await queryOne<{ count: number | string }>(
+      `SELECT COUNT(*) as count FROM categories WHERE user_id = ?`,
+      [userId]
+    );
+    if (existing && Number(existing.count) > 0) return;
+    await seedDefaultUserCategories(userId);
+  } catch (err) {
+    console.warn('Error en ensureDefaultUserCategories:', err);
+  }
+}
+
+/**
+ * Asegura que el usuario tenga al menos una cuenta activa por defecto
+ */
+export async function ensureDefaultAccount(userId: string): Promise<void> {
+  try {
+    const existing = await queryOne<{ count: number | string }>(
+      `SELECT COUNT(*) as count FROM accounts WHERE user_id = ?`,
+      [userId]
+    );
+    if (existing && Number(existing.count) > 0) return;
+    const defaultAccountId = crypto.randomUUID();
+    const now = new Date().toISOString();
+    await execute(
+      `INSERT INTO accounts (id, user_id, name, type, initial_balance_cents, current_balance_cents, color, is_active, created_at)
+       VALUES (?, ?, 'Cuenta Principal', 'CHECKING', 0, 0, '#10b981', true, ?)`,
+      [defaultAccountId, userId, now]
+    );
+  } catch (err) {
+    console.warn('Error en ensureDefaultAccount:', err);
   }
 }

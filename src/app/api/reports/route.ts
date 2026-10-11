@@ -22,7 +22,7 @@ export async function GET(req: Request) {
   const params: any[] = [session.id];
 
   if (month) {
-    query += ` AND t.date LIKE ?`;
+    query += ` AND t.date::text LIKE ?`;
     params.push(`${month}%`);
   }
   query += ` ORDER BY t.date DESC`;
