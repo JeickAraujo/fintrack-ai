@@ -3,6 +3,7 @@ import initSqlJs, { Database as SqlJsDatabase } from 'sql.js';
 
 let pgPool: Pool | null = null;
 let memorySqlite: SqlJsDatabase | null = null;
+let schemaConstraintsChecked = false;
 
 /**
  * Retorna el pool de PostgreSQL si DATABASE_URL o SUPABASE_DB_URL está disponible.
@@ -22,6 +23,48 @@ function getPgPool(): Pool | null {
     });
   }
   return pgPool;
+}
+
+/**
+ * Garantiza de forma reactiva y automática que las claves foráneas de PostgreSQL
+ * apunten a public.users(id) y no al esquema interno de auth.users(id) de Supabase.
+ */
+async function ensurePostgresConstraints(pool: Pool): Promise<void> {
+  if (schemaConstraintsChecked) return;
+  schemaConstraintsChecked = true;
+  try {
+    const client = await pool.connect();
+    try {
+      await client.query(`
+        DO $$
+        BEGIN
+          -- 1. Si accounts_user_id_fkey apunta a auth.users, corregirla a public.users(id)
+          IF EXISTS (
+            SELECT 1 FROM pg_constraint
+            WHERE conname = 'accounts_user_id_fkey'
+              AND confrelid::regclass::text = 'auth.users'
+          ) THEN
+            ALTER TABLE public.accounts DROP CONSTRAINT accounts_user_id_fkey;
+            ALTER TABLE public.accounts ADD CONSTRAINT accounts_user_id_fkey 
+              FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
+          END IF;
+
+          -- 2. Asegurar que exista la clave foránea correcta si no existía ninguna
+          IF NOT EXISTS (
+            SELECT 1 FROM pg_constraint
+            WHERE conname = 'accounts_user_id_fkey'
+          ) THEN
+            ALTER TABLE public.accounts ADD CONSTRAINT accounts_user_id_fkey 
+              FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
+          END IF;
+        END $$;
+      `);
+    } finally {
+      client.release();
+    }
+  } catch (err) {
+    console.warn('[DB] Falló auto-migración de restricciones Postgres:', err);
+  }
 }
 
 /**
@@ -135,6 +178,7 @@ function convertPlaceholders(sql: string): string {
 export async function queryAll<T = any>(sql: string, params: any[] = []): Promise<T[]> {
   const pool = getPgPool();
   if (pool) {
+    await ensurePostgresConstraints(pool);
     const pgSql = convertPlaceholders(sql);
     const client = await pool.connect();
     try {
@@ -171,6 +215,7 @@ export async function queryOne<T = any>(sql: string, params: any[] = []): Promis
 export async function execute(sql: string, params: any[] = []): Promise<void> {
   const pool = getPgPool();
   if (pool) {
+    await ensurePostgresConstraints(pool);
     const pgSql = convertPlaceholders(sql);
     const client = await pool.connect();
     try {

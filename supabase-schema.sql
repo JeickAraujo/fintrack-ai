@@ -18,6 +18,18 @@ CREATE TABLE IF NOT EXISTS public.users (
 );
 
 -- 2. Tabla de Cuentas Financieras
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conname = 'accounts_user_id_fkey'
+      AND confrelid::regclass::text = 'auth.users'
+  ) THEN
+    ALTER TABLE public.accounts DROP CONSTRAINT accounts_user_id_fkey;
+    ALTER TABLE public.accounts ADD CONSTRAINT accounts_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
+  END IF;
+END $$;
+
 CREATE TABLE IF NOT EXISTS public.accounts (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id UUID NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
