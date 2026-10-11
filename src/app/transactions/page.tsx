@@ -24,9 +24,13 @@ export default function TransactionsPage() {
   const [formCategoryId, setFormCategoryId] = useState('');
   const [formNotes, setFormNotes] = useState('');
 
+  const [submitting, setSubmitting] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
   const loadData = async () => {
     try {
       setLoading(true);
+      setErrorMsg(null);
       const [txRes, accRes, budRes] = await Promise.all([
         fetch('/api/transactions'),
         fetch('/api/accounts'),
@@ -36,6 +40,9 @@ export default function TransactionsPage() {
       const txJson = await txRes.json();
       const accJson = await accRes.json();
       const budJson = await budRes.json();
+
+      if (!txRes.ok) throw new Error(txJson.error || 'Error cargando transacciones');
+      if (!accRes.ok) throw new Error(accJson.error || 'Error cargando cuentas');
 
       setTransactions(txJson.transactions || []);
       setAccounts(accJson.accounts || []);
@@ -47,8 +54,9 @@ export default function TransactionsPage() {
           setFormDestAccountId(accJson.accounts[1].id);
         }
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
+      setErrorMsg(err.message || 'Error de conexión');
     } finally {
       setLoading(false);
     }
@@ -63,6 +71,8 @@ export default function TransactionsPage() {
     if (!formAmount || !formDesc || !formAccountId) return;
 
     try {
+      setSubmitting(true);
+      setErrorMsg(null);
       const res = await fetch('/api/transactions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -79,15 +89,21 @@ export default function TransactionsPage() {
         }),
       });
 
-      if (res.ok) {
-        setShowModal(false);
-        setFormAmount('');
-        setFormDesc('');
-        setFormNotes('');
-        loadData();
+      const json = await res.json();
+      if (!res.ok) {
+        throw new Error(json.error || 'Error registrando transacción');
       }
-    } catch (err) {
+
+      setShowModal(false);
+      setFormAmount('');
+      setFormDesc('');
+      setFormNotes('');
+      await loadData();
+    } catch (err: any) {
       console.error(err);
+      setErrorMsg(err.message || 'Error al guardar');
+    } finally {
+      setSubmitting(false);
     }
   };
 

@@ -28,10 +28,13 @@ export default function ImportPage() {
       });
   }, []);
 
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
+    setErrorMsg(null);
     const reader = new FileReader();
     reader.onload = (event) => {
       const text = event.target?.result as string;
@@ -41,9 +44,13 @@ export default function ImportPage() {
   };
 
   const handlePreview = async () => {
-    if (!csvContent || !selectedAccountId) return;
+    if (!csvContent || !selectedAccountId) {
+      setErrorMsg('Debes seleccionar un archivo CSV y una cuenta de destino.');
+      return;
+    }
     try {
       setLoading(true);
+      setErrorMsg(null);
       const res = await fetch('/api/import', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -54,9 +61,13 @@ export default function ImportPage() {
         }),
       });
       const json = await res.json();
+      if (!res.ok) {
+        throw new Error(json.error || 'Error al procesar el archivo CSV');
+      }
       setPreviewResult(json);
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
+      setErrorMsg(err.message || 'Error analizando extracto');
     } finally {
       setLoading(false);
     }
@@ -66,6 +77,7 @@ export default function ImportPage() {
     if (!previewResult || !selectedAccountId) return;
     try {
       setLoading(true);
+      setErrorMsg(null);
       const res = await fetch('/api/import', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -76,13 +88,15 @@ export default function ImportPage() {
         }),
       });
       const json = await res.json();
-      if (res.ok) {
-        setImportSuccess(json.importedCount);
-        setPreviewResult(null);
-        setCsvContent('');
+      if (!res.ok) {
+        throw new Error(json.error || 'Error al importar movimientos');
       }
-    } catch (err) {
+      setImportSuccess(json.importedCount);
+      setPreviewResult(null);
+      setCsvContent('');
+    } catch (err: any) {
       console.error(err);
+      setErrorMsg(err.message || 'Error importando');
     } finally {
       setLoading(false);
     }
@@ -91,6 +105,8 @@ export default function ImportPage() {
   const handleParseNotification = async () => {
     if (!notificationText.trim()) return;
     try {
+      setLoading(true);
+      setErrorMsg(null);
       const res = await fetch('/api/import', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -100,15 +116,26 @@ export default function ImportPage() {
         }),
       });
       const json = await res.json();
+      if (!res.ok) {
+        throw new Error(json.error || 'Error analizando notificación');
+      }
+      if (!json.item) {
+        throw new Error('No se pudo detectar un monto válido en el texto de la notificación.');
+      }
       setParsedNotification(json.item);
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
+      setErrorMsg(err.message || 'Error procesando notificación');
+    } finally {
+      setLoading(false);
     }
   };
 
   const handleSaveNotificationTx = async () => {
     if (!parsedNotification || !selectedAccountId) return;
     try {
+      setLoading(true);
+      setErrorMsg(null);
       const res = await fetch('/api/transactions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -116,18 +143,23 @@ export default function ImportPage() {
           accountId: selectedAccountId,
           type: parsedNotification.type,
           amountCents: parsedNotification.amountCents,
-          date: parsedNotification.date,
+          date: parsedNotification.date || new Date().toLocaleDateString('en-CA', { timeZone: 'America/Bogota' }),
           description: parsedNotification.description,
           source: 'NOTIFICATION',
         }),
       });
-      if (res.ok) {
-        setParsedNotification(null);
-        setNotificationText('');
-        alert('Movimiento registrado exitosamente desde la notificación.');
+      const json = await res.json();
+      if (!res.ok) {
+        throw new Error(json.error || 'Error registrando movimiento');
       }
-    } catch (err) {
+      setParsedNotification(null);
+      setNotificationText('');
+      setImportSuccess(1);
+    } catch (err: any) {
       console.error(err);
+      setErrorMsg(err.message || 'Error registrando transacción');
+    } finally {
+      setLoading(false);
     }
   };
 

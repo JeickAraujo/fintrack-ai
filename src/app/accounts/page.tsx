@@ -16,14 +16,22 @@ export default function AccountsPage() {
   const [formCreditLimit, setFormCreditLimit] = useState('');
   const [formColor, setFormColor] = useState('#10b981');
 
+  const [submitting, setSubmitting] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
   const loadAccounts = async () => {
     try {
       setLoading(true);
+      setErrorMsg(null);
       const res = await fetch('/api/accounts');
       const json = await res.json();
+      if (!res.ok) {
+        throw new Error(json.error || 'Error cargando cuentas');
+      }
       setAccounts(json.accounts || []);
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
+      setErrorMsg(err.message || 'Error de conexión');
     } finally {
       setLoading(false);
     }
@@ -38,6 +46,8 @@ export default function AccountsPage() {
     if (!formName) return;
 
     try {
+      setSubmitting(true);
+      setErrorMsg(null);
       const res = await fetch('/api/accounts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -50,15 +60,21 @@ export default function AccountsPage() {
         }),
       });
 
-      if (res.ok) {
-        setShowModal(false);
-        setFormName('');
-        setFormBalance('');
-        setFormCreditLimit('');
-        loadAccounts();
+      const json = await res.json();
+      if (!res.ok) {
+        throw new Error(json.error || 'Error creando cuenta');
       }
-    } catch (err) {
+
+      setShowModal(false);
+      setFormName('');
+      setFormBalance('');
+      setFormCreditLimit('');
+      await loadAccounts();
+    } catch (err: any) {
       console.error(err);
+      setErrorMsg(err.message || 'Error al guardar cuenta');
+    } finally {
+      setSubmitting(false);
     }
   };
 
