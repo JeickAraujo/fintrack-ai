@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { Sidebar } from '@/components/layout/Sidebar';
-import { Plus, Filter, Search, ArrowUpRight, ArrowDownLeft, ArrowLeftRight, CheckCircle2 } from 'lucide-react';
+import { Plus, Filter, Search, ArrowUpRight, ArrowDownLeft, ArrowLeftRight, CheckCircle2, Trash2, Loader2 } from 'lucide-react';
 import { formatCurrency, dollarsToCents } from '@/lib/currency';
 
 export default function TransactionsPage() {
@@ -26,6 +26,10 @@ export default function TransactionsPage() {
 
   const [submitting, setSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  // Delete confirmation
+  const [deleteModalTx, setDeleteModalTx] = useState<any | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   const loadData = async () => {
     try {
@@ -107,6 +111,30 @@ export default function TransactionsPage() {
     }
   };
 
+  const handleDeleteTransaction = async () => {
+    if (!deleteModalTx) return;
+    try {
+      setDeleting(true);
+      setErrorMsg(null);
+      const res = await fetch(`/api/transactions?id=${deleteModalTx.id}`, {
+        method: 'DELETE',
+      });
+      const json = await res.json();
+      if (!res.ok) {
+        throw new Error(json.error || 'Error al eliminar movimiento');
+      }
+      setTransactions((prev) => prev.filter((t) => t.id !== deleteModalTx.id));
+      setDeleteModalTx(null);
+      // Recargar datos en segundo plano para actualizar balances de cuentas
+      loadData();
+    } catch (err: any) {
+      console.error(err);
+      alert(err.message || 'Error eliminando movimiento');
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   const filtered = transactions.filter((tx) => {
     const matchesSearch = tx.description.toLowerCase().includes(searchTerm.toLowerCase());
     const matchesType = selectedType ? tx.type === selectedType : true;
@@ -179,6 +207,7 @@ export default function TransactionsPage() {
                     <th className="py-3 px-3 sm:px-4 hidden sm:table-cell">Cuenta</th>
                     <th className="py-3 px-3 sm:px-4 hidden lg:table-cell">Origen</th>
                     <th className="py-3 px-3 sm:px-4 text-right whitespace-nowrap">Valor</th>
+                    <th className="py-3 px-2 sm:px-4 text-center whitespace-nowrap">Acción</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-800/60">
@@ -231,6 +260,16 @@ export default function TransactionsPage() {
                           }`}
                         >
                           {isIncome ? '+' : isTransfer ? '⇄ ' : '-'}{formatCurrency(tx.amount_cents)}
+                        </td>
+                        <td className="py-3 px-2 sm:px-4 text-center whitespace-nowrap">
+                          <button
+                            type="button"
+                            onClick={() => setDeleteModalTx(tx)}
+                            title="Eliminar movimiento"
+                            className="p-1.5 rounded-lg text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 transition-colors inline-flex items-center justify-center"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
                         </td>
                       </tr>
                     );
@@ -390,6 +429,79 @@ export default function TransactionsPage() {
                   </button>
                 </div>
               </form>
+            </div>
+          </div>
+        )}
+
+        {/* Modal de Confirmación de Eliminación */}
+        {deleteModalTx && (
+          <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-3 sm:p-4">
+            <div className="bg-slate-900 border border-slate-800 rounded-3xl max-w-md w-full p-5 sm:p-6 shadow-2xl space-y-4">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 rounded-2xl bg-rose-500/10 border border-rose-500/20 text-rose-400">
+                  <Trash2 className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-white">Eliminar Movimiento</h3>
+                  <p className="text-xs text-slate-400">Esta acción no se puede deshacer</p>
+                </div>
+              </div>
+
+              <div className="bg-slate-950/60 border border-slate-800/80 rounded-2xl p-4 space-y-2 text-xs">
+                <div className="flex justify-between items-center">
+                  <span className="text-slate-400">Concepto:</span>
+                  <span className="font-semibold text-slate-200 text-right truncate max-w-[200px]">
+                    {deleteModalTx.description}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-slate-400">Monto:</span>
+                  <span className="font-bold text-white">
+                    {formatCurrency(deleteModalTx.amount_cents)}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-slate-400">Fecha:</span>
+                  <span className="text-slate-300">{deleteModalTx.date}</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-slate-400">Cuenta:</span>
+                  <span className="text-slate-300">{deleteModalTx.account_name}</span>
+                </div>
+              </div>
+
+              <p className="text-[11px] text-slate-400 leading-relaxed">
+                El saldo de la cuenta será recalculado automáticamente para reflejar la eliminación de este movimiento.
+              </p>
+
+              <div className="flex items-center justify-end gap-3 pt-2">
+                <button
+                  type="button"
+                  disabled={deleting}
+                  onClick={() => setDeleteModalTx(null)}
+                  className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-medium text-xs transition-colors"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  disabled={deleting}
+                  onClick={handleDeleteTransaction}
+                  className="px-5 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs inline-flex items-center gap-2 shadow-lg shadow-rose-600/20 transition-all disabled:opacity-50"
+                >
+                  {deleting ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <span>Eliminando...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Trash2 className="w-4 h-4" />
+                      <span>Sí, eliminar</span>
+                    </>
+                  )}
+                </button>
+              </div>
             </div>
           </div>
         )}

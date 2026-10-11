@@ -15,7 +15,9 @@ import {
   Calendar,
   Layers,
   ChevronRight,
-  CheckCircle2
+  CheckCircle2,
+  Trash2,
+  Loader2
 } from 'lucide-react';
 import Link from 'next/link';
 import { formatCurrency } from '@/lib/currency';
@@ -31,6 +33,10 @@ export default function DashboardPage() {
   const [proposedItems, setProposedItems] = useState<any[]>([]);
   const [accounts, setAccounts] = useState<any[]>([]);
   const [selectedAccountId, setSelectedAccountId] = useState('');
+
+  // Delete transaction modal
+  const [deleteModalTx, setDeleteModalTx] = useState<any | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   const fetchDashboard = async () => {
     try {
@@ -104,6 +110,27 @@ export default function DashboardPage() {
       }
     } catch (err) {
       console.error(err);
+    }
+  };
+
+  const handleDeleteTransaction = async () => {
+    if (!deleteModalTx) return;
+    try {
+      setDeleting(true);
+      const res = await fetch(`/api/transactions?id=${deleteModalTx.id}`, {
+        method: 'DELETE',
+      });
+      const json = await res.json();
+      if (!res.ok) {
+        throw new Error(json.error || 'Error al eliminar movimiento');
+      }
+      setDeleteModalTx(null);
+      await fetchDashboard();
+    } catch (err: any) {
+      console.error(err);
+      alert(err.message || 'Error eliminando movimiento');
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -435,6 +462,7 @@ export default function DashboardPage() {
                     <th className="pb-3 px-3">Cuenta</th>
                     <th className="pb-3 px-3">Origen</th>
                     <th className="pb-3 px-3 text-right">Monto</th>
+                    <th className="pb-3 px-3 text-center">Acción</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-800/60">
@@ -462,6 +490,16 @@ export default function DashboardPage() {
                         <td className={`py-3 px-3 text-right font-bold ${isIncome ? 'text-emerald-400' : 'text-slate-200'}`}>
                           {isIncome ? '+' : '-'}{formatCurrency(tx.amount_cents, currency)}
                         </td>
+                        <td className="py-3 px-3 text-center">
+                          <button
+                            type="button"
+                            onClick={() => setDeleteModalTx(tx)}
+                            title="Eliminar movimiento"
+                            className="p-1.5 rounded-lg text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 transition-colors inline-flex items-center justify-center"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </td>
                       </tr>
                     );
                   })}
@@ -470,6 +508,79 @@ export default function DashboardPage() {
             </div>
           )}
         </div>
+
+        {/* Modal de Confirmación de Eliminación */}
+        {deleteModalTx && (
+          <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-3 sm:p-4">
+            <div className="bg-slate-900 border border-slate-800 rounded-3xl max-w-md w-full p-5 sm:p-6 shadow-2xl space-y-4">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 rounded-2xl bg-rose-500/10 border border-rose-500/20 text-rose-400">
+                  <Trash2 className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-white">Eliminar Movimiento</h3>
+                  <p className="text-xs text-slate-400">Esta acción no se puede deshacer</p>
+                </div>
+              </div>
+
+              <div className="bg-slate-950/60 border border-slate-800/80 rounded-2xl p-4 space-y-2 text-xs">
+                <div className="flex justify-between items-center">
+                  <span className="text-slate-400">Concepto:</span>
+                  <span className="font-semibold text-slate-200 text-right truncate max-w-[200px]">
+                    {deleteModalTx.description}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-slate-400">Monto:</span>
+                  <span className="font-bold text-white">
+                    {formatCurrency(deleteModalTx.amount_cents, currency)}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-slate-400">Fecha:</span>
+                  <span className="text-slate-300">{deleteModalTx.date}</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-slate-400">Cuenta:</span>
+                  <span className="text-slate-300">{deleteModalTx.account_name}</span>
+                </div>
+              </div>
+
+              <p className="text-[11px] text-slate-400 leading-relaxed">
+                El saldo de la cuenta será recalculado automáticamente para reflejar la eliminación de este movimiento.
+              </p>
+
+              <div className="flex items-center justify-end gap-3 pt-2">
+                <button
+                  type="button"
+                  disabled={deleting}
+                  onClick={() => setDeleteModalTx(null)}
+                  className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-medium text-xs transition-colors"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  disabled={deleting}
+                  onClick={handleDeleteTransaction}
+                  className="px-5 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs inline-flex items-center gap-2 shadow-lg shadow-rose-600/20 transition-all disabled:opacity-50"
+                >
+                  {deleting ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <span>Eliminando...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Trash2 className="w-4 h-4" />
+                      <span>Sí, eliminar</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </main>
     </div>
   );

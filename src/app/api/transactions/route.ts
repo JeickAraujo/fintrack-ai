@@ -2,7 +2,7 @@ export const dynamic = 'force-dynamic';
 import { NextResponse } from 'next/server';
 import crypto from 'crypto';
 import { getSessionFromRequest } from '@/lib/auth';
-import { queryAll, execute } from '@/lib/db';
+import { queryAll, queryOne, execute } from '@/lib/db';
 import { recalculateAccountBalance } from '@/lib/financial-engine';
 
 export async function GET(req: Request) {
@@ -116,3 +116,60 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'Error creando transacción: ' + (err?.message || String(err)) }, { status: 500 });
   }
 }
+
+export async function DELETE(req: Request) {
+  try {
+    const session = await getSessionFromRequest(req);
+    if (!session) return NextResponse.json({ error: 'No autorizado' }, { status: 401 });
+
+    const { searchParams } = new URL(req.url);
+    const id = searchParams.get('id');
+
+    if (!id) {
+      return NextResponse.json({ error: 'ID de transacción requerido' }, { status: 400 });
+    }
+
+    // Buscar la transacción y verificar que pertenezca al usuario
+    const tx = await queryOne<any>(
+      `SELECT * FROM transactions WHERE id = ? AND user_id = ?`,
+      [id, session.id]
+    );
+
+    if (!tx) {
+      return NextResponse.json({ error: 'Movimiento no encontrado' }, { status: 404 });
+    }
+
+    // 1. Si estaba vinculada a una obligación de pago, restaurar la obligación a PENDING
+    await execute(
+      `UPDATE payment_obligations 
+       SET status = 'PENDING', paid_at = NULL, transaction_id = NULL 
+       WHERE transaction_id = ? AND user_id = ?`,
+      [id, session.id]
+    );
+
+    // 2. Eliminar la transacción
+    await execute(
+      `DELETE FROM transactions WHERE id = ? AND user_id = ?`,
+      [id, session.id]
+    );
+
+    // 3. Recalcular saldo de la cuenta de origen
+    if (tx.account_id) {
+      await recalculateAccountBalance(tx.account_id);
+    }
+
+    // 4. Si fue transferencia, recalcular también la cuenta de destino
+    if (tx.type === 'TRANSFER' && tx.destination_account_id) {
+      await recalculateAccountBalance(tx.destination_account_id);
+    }
+
+    return NextResponse.json({ success: true, message: 'Movimiento eliminado exitosamente' });
+  } catch (err: any) {
+    console.error('Transactions DELETE error:', err);
+    return NextResponse.json(
+      { error: 'Error eliminando transacción: ' + (err?.message || String(err)) },
+      { status: 500 }
+    );
+  }
+}
+
