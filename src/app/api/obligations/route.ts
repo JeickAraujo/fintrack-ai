@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import crypto from 'crypto';
 import { getSessionFromRequest } from '@/lib/auth';
-import { queryAll, execute } from '@/lib/db';
+import { queryAll, queryOne, execute } from '@/lib/db';
 import { recalculateAccountBalance } from '@/lib/financial-engine';
 
 export async function GET(req: Request) {
@@ -30,21 +30,20 @@ export async function POST(req: Request) {
 
     // Acción de marcar como pagado sin duplicar gastos
     if (action === 'pay') {
-      const { obligationId, accountId, date = new Date().toISOString().substring(0, 10) } = body;
-      const obligation = await queryAll(
+      const { obligationId, accountId, date = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Bogota' }) } = body;
+      const obligation = await queryOne<any>(
         `SELECT * FROM payment_obligations WHERE id = ? AND user_id = ?`,
         [obligationId, session.id]
       );
-      if (!obligation.length) {
+      if (!obligation) {
         return NextResponse.json({ error: 'Obligación no encontrada' }, { status: 404 });
       }
 
-      const item = obligation[0];
-      if (item.status === 'PAID') {
+      if (obligation.status === 'PAID') {
         return NextResponse.json({ error: 'Esta obligación ya se encuentra pagada' }, { status: 400 });
       }
 
-      const selectedAccountId = accountId || item.account_id;
+      const selectedAccountId = accountId || obligation.account_id;
       if (!selectedAccountId) {
         return NextResponse.json({ error: 'Debe especificar una cuenta para efectuar el pago' }, { status: 400 });
       }
@@ -55,7 +54,7 @@ export async function POST(req: Request) {
       await execute(
         `INSERT INTO transactions (id, user_id, account_id, category_id, type, amount_cents, date, description, payment_method, status, notes, source, created_at)
          VALUES (?, ?, ?, ?, 'EXPENSE', ?, ?, ?, 'Transferencia / Débito', 'CLEARED', 'Pago de obligación programada', 'MANUAL', ?)`,
-        [txId, session.id, selectedAccountId, item.category_id, item.amount_cents, date, `Pago: ${item.name}`, now]
+        [txId, session.id, selectedAccountId, obligation.category_id, obligation.amount_cents, date, `Pago: ${obligation.name}`, now]
       );
 
       // 2. Marcar la obligación como pagada enlazando la transacción
@@ -90,6 +89,63 @@ export async function POST(req: Request) {
     return NextResponse.json({ success: true, obligationId: id });
   } catch (err: any) {
     console.error('Obligations POST error:', err);
-    return NextResponse.json({ error: 'Error procesando obligación de pago' }, { status: 500 });
+    return NextResponse.json({ error: 'Error procesando obligación de pago: ' + (err?.message || String(err)) }, { status: 500 });
+  }
+}
+
+export async function PUT(req: Request) {
+  const session = await getSessionFromRequest(req);
+  if (!session) return NextResponse.json({ error: 'No autorizado' }, { status: 401 });
+
+  try {
+    const body = await req.json();
+    const { id, name, amountCents, dueDate, frequency = 'MONTHLY', categoryId, accountId, isSubscription = false } = body;
+
+    if (!id || !name || !amountCents || !dueDate) {
+      return NextResponse.json({ error: 'ID, nombre, monto y fecha de vencimiento requeridos' }, { status: 400 });
+    }
+
+    const existing = await queryOne(`SELECT id FROM payment_obligations WHERE id = ? AND user_id = ?`, [id, session.id]);
+    if (!existing) {
+      return NextResponse.json({ error: 'Obligación no encontrada' }, { status: 404 });
+    }
+
+    await execute(
+      `UPDATE payment_obligations 
+       SET name = ?, amount_cents = ?, due_date = ?, frequency = ?, category_id = ?, account_id = ?, is_subscription = ?
+       WHERE id = ? AND user_id = ?`,
+      [name.trim(), amountCents, dueDate, frequency, categoryId || null, accountId || null, isSubscription ? 1 : 0, id, session.id]
+    );
+
+    return NextResponse.json({ success: true, updated: true });
+  } catch (err: any) {
+    console.error('Obligations PUT error:', err);
+    return NextResponse.json({ error: 'Error actualizando obligación: ' + (err?.message || String(err)) }, { status: 500 });
+  }
+}
+
+export async function DELETE(req: Request) {
+  const session = await getSessionFromRequest(req);
+  if (!session) return NextResponse.json({ error: 'No autorizado' }, { status: 401 });
+
+  try {
+    const { searchParams } = new URL(req.url);
+    const id = searchParams.get('id');
+
+    if (!id) {
+      return NextResponse.json({ error: 'ID de obligación requerido' }, { status: 400 });
+    }
+
+    const existing = await queryOne(`SELECT id FROM payment_obligations WHERE id = ? AND user_id = ?`, [id, session.id]);
+    if (!existing) {
+      return NextResponse.json({ error: 'Obligación no encontrada' }, { status: 404 });
+    }
+
+    await execute(`DELETE FROM payment_obligations WHERE id = ? AND user_id = ?`, [id, session.id]);
+
+    return NextResponse.json({ success: true, deleted: true });
+  } catch (err: any) {
+    console.error('Obligations DELETE error:', err);
+    return NextResponse.json({ error: 'Error eliminando obligación: ' + (err?.message || String(err)) }, { status: 500 });
   }
 }

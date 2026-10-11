@@ -77,18 +77,26 @@ export async function recalculateAccountBalance(accountId: string): Promise<numb
   return newBalanceCents;
 }
 
+export function getBogotaCurrentMonth(): string {
+  // YYYY-MM en zona horaria America/Bogota
+  const dateStr = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Bogota' });
+  return dateStr.substring(0, 7);
+}
+
 /**
  * Calcula todas las métricas para el Dashboard Financiero Inteligente
  */
 export async function getDashboardMetrics(userId: string, targetMonthYear?: string): Promise<FinancialSummary> {
-  const currentMonth = targetMonthYear || new Date().toISOString().substring(0, 7); // YYYY-MM
+  const currentMonth = targetMonthYear || getBogotaCurrentMonth(); // YYYY-MM
   
   // Calcular mes anterior
   const [yearStr, monthStr] = currentMonth.split('-');
   const year = parseInt(yearStr);
   const month = parseInt(monthStr);
   const prevMonthDate = new Date(year, month - 2, 1);
-  const prevMonthStr = prevMonthDate.toISOString().substring(0, 7);
+  const prevMonthYear = prevMonthDate.getFullYear();
+  const prevMonthNum = String(prevMonthDate.getMonth() + 1).padStart(2, '0');
+  const prevMonthStr = `${prevMonthYear}-${prevMonthNum}`;
 
   // 1. Saldo total disponible (excluyendo tarjetas de crédito que son pasivos)
   const assetAccounts = await queryOne<{ total: number }>(

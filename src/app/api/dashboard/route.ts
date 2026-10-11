@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getSessionFromRequest } from '@/lib/auth';
-import { getDashboardMetrics } from '@/lib/financial-engine';
+import { getDashboardMetrics, getBogotaCurrentMonth } from '@/lib/financial-engine';
 import { queryAll } from '@/lib/db';
 
 export async function GET(req: Request) {
@@ -8,7 +8,7 @@ export async function GET(req: Request) {
   if (!session) return NextResponse.json({ error: 'No autorizado' }, { status: 401 });
 
   const { searchParams } = new URL(req.url);
-  const month = searchParams.get('month') || new Date().toISOString().substring(0, 7);
+  const month = searchParams.get('month') || getBogotaCurrentMonth();
 
   const metrics = await getDashboardMetrics(session.id, month);
 

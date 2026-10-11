@@ -3,13 +3,14 @@ import crypto from 'crypto';
 import { getSessionFromRequest } from '@/lib/auth';
 import { queryAll, execute } from '@/lib/db';
 import { dollarsToCents } from '@/lib/currency';
+import { getBogotaCurrentMonth } from '@/lib/financial-engine';
 
 export async function GET(req: Request) {
   const session = await getSessionFromRequest(req);
   if (!session) return NextResponse.json({ error: 'No autorizado' }, { status: 401 });
 
   const { searchParams } = new URL(req.url);
-  const month = searchParams.get('month') || new Date().toISOString().substring(0, 7);
+  const month = searchParams.get('month') || getBogotaCurrentMonth();
 
   // Obtener presupuestos con el gasto real acumulado por categoría
   const budgets = await queryAll(
