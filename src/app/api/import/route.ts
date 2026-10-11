@@ -49,7 +49,7 @@ export async function POST(req: Request) {
 
       // Obtener categorías para mapear nombres a IDs
       const categories = await queryAll<{ id: string; name: string }>(
-        `SELECT id, name FROM categories WHERE user_id = ? OR is_system IS TRUE`,
+        `SELECT id, name FROM categories WHERE user_id = ? OR (user_id IS NULL AND is_system IS TRUE)`,
         [session.id]
       );
       const catMap = new Map(categories.map(c => [c.name.toLowerCase(), c.id]));

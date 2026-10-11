@@ -37,6 +37,8 @@ async function ensurePostgresConstraints(pool: Pool): Promise<void> {
     try {
       await client.query(`
         DO $$
+        DECLARE
+          dup RECORD;
         BEGIN
           -- 1. Si accounts_user_id_fkey apunta a auth.users, corregirla a public.users(id)
           IF EXISTS (
@@ -57,6 +59,42 @@ async function ensurePostgresConstraints(pool: Pool): Promise<void> {
             ALTER TABLE public.accounts ADD CONSTRAINT accounts_user_id_fkey 
               FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
           END IF;
+
+          -- 3. Asegurar que las categorías de usuarios específicos no se consideren globales del sistema
+          UPDATE public.categories SET is_system = false WHERE user_id IS NOT NULL AND is_system = true;
+
+          -- 4. Deduplicar categorías idénticas para cada usuario
+          FOR dup IN (
+            SELECT user_id, LOWER(name) as lower_name, type, MIN(id) as keep_id
+            FROM public.categories
+            WHERE user_id IS NOT NULL
+            GROUP BY user_id, LOWER(name), type
+            HAVING COUNT(*) > 1
+          ) LOOP
+            UPDATE public.transactions
+            SET category_id = dup.keep_id
+            WHERE category_id IN (
+              SELECT id FROM public.categories 
+              WHERE user_id = dup.user_id AND LOWER(name) = dup.lower_name AND type = dup.type AND id != dup.keep_id
+            );
+
+            UPDATE public.budgets
+            SET category_id = dup.keep_id
+            WHERE category_id IN (
+              SELECT id FROM public.categories 
+              WHERE user_id = dup.user_id AND LOWER(name) = dup.lower_name AND type = dup.type AND id != dup.keep_id
+            );
+
+            UPDATE public.payment_obligations
+            SET category_id = dup.keep_id
+            WHERE category_id IN (
+              SELECT id FROM public.categories 
+              WHERE user_id = dup.user_id AND LOWER(name) = dup.lower_name AND type = dup.type AND id != dup.keep_id
+            );
+
+            DELETE FROM public.categories
+            WHERE user_id = dup.user_id AND LOWER(name) = dup.lower_name AND type = dup.type AND id != dup.keep_id;
+          END LOOP;
         END $$;
       `);
     } finally {

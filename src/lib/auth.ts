@@ -105,13 +105,19 @@ export async function seedDefaultUserCategories(userId: string): Promise<void> {
   ];
 
   for (const cat of defaults) {
-    const id = crypto.randomUUID();
-    const now = new Date().toISOString();
-    await execute(
-      `INSERT INTO categories (id, user_id, name, type, icon, color, keywords, is_system, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, true, ?)`,
-      [id, userId, cat.name, cat.type, cat.icon, cat.color, cat.keywords, now]
+    const exists = await queryOne<{ id: string }>(
+      `SELECT id FROM categories WHERE user_id = ? AND LOWER(name) = LOWER(?) AND type = ?`,
+      [userId, cat.name, cat.type]
     );
+    if (!exists) {
+      const id = crypto.randomUUID();
+      const now = new Date().toISOString();
+      await execute(
+        `INSERT INTO categories (id, user_id, name, type, icon, color, keywords, is_system, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, false, ?)`,
+        [id, userId, cat.name, cat.type, cat.icon, cat.color, cat.keywords, now]
+      );
+    }
   }
 }
 

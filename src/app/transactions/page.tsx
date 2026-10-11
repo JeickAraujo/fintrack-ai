@@ -392,11 +392,14 @@ export default function TransactionsPage() {
                         className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-slate-200 focus:outline-none focus:border-emerald-500"
                       >
                         <option value="">Selecciona categoría...</option>
-                        {categories.map((c) => (
-                          <option key={c.id} value={c.id}>
-                            {c.name} ({c.type})
-                          </option>
-                        ))}
+                        {categories
+                          .filter((c) => (formType === 'INCOME' ? c.type === 'INCOME' : c.type === 'EXPENSE'))
+                          .filter((cat, idx, self) => idx === self.findIndex((t) => t.name.toLowerCase() === cat.name.toLowerCase()))
+                          .map((c) => (
+                            <option key={c.id} value={c.id}>
+                              {c.name}
+                            </option>
+                          ))}
                       </select>
                     </div>
                   )}

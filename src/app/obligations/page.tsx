@@ -402,11 +402,14 @@ export default function ObligationsPage() {
                       className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-slate-200 focus:outline-none focus:border-emerald-500"
                     >
                       <option value="">(Sin Categoría)</option>
-                      {categories.map((c) => (
-                        <option key={c.id} value={c.id}>
-                          {c.name}
-                        </option>
-                      ))}
+                      {categories
+                        .filter((c) => c.type === 'EXPENSE')
+                        .filter((cat, idx, self) => idx === self.findIndex((t) => t.name.toLowerCase() === cat.name.toLowerCase()))
+                        .map((c) => (
+                          <option key={c.id} value={c.id}>
+                            {c.name}
+                          </option>
+                        ))}
                     </select>
                   </div>
                 </div>

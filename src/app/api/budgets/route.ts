@@ -33,7 +33,7 @@ export async function GET(req: Request) {
     );
 
     let categories = await queryAll(
-      `SELECT * FROM categories WHERE user_id = ? OR is_system IS TRUE ORDER BY type ASC, name ASC`,
+      `SELECT * FROM categories WHERE user_id = ? OR (user_id IS NULL AND is_system IS TRUE) ORDER BY type ASC, name ASC`,
       [session.id]
     );
 
@@ -41,12 +41,23 @@ export async function GET(req: Request) {
     if (categories.length === 0) {
       await ensureDefaultUserCategories(session.id);
       categories = await queryAll(
-        `SELECT * FROM categories WHERE user_id = ? OR is_system IS TRUE ORDER BY type ASC, name ASC`,
+        `SELECT * FROM categories WHERE user_id = ? OR (user_id IS NULL AND is_system IS TRUE) ORDER BY type ASC, name ASC`,
         [session.id]
       );
     }
 
-    return NextResponse.json({ budgets, categories, month });
+    // Deduplicación estricta en memoria por tipo y nombre
+    const uniqueCategories: any[] = [];
+    const seenCat = new Set<string>();
+    for (const c of categories) {
+      const key = `${c.type}_${c.name.trim().toLowerCase()}`;
+      if (!seenCat.has(key)) {
+        seenCat.add(key);
+        uniqueCategories.push(c);
+      }
+    }
+
+    return NextResponse.json({ budgets, categories: uniqueCategories, month });
   } catch (err: any) {
     console.error('Budgets GET error:', err);
     return NextResponse.json(
