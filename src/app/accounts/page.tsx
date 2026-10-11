@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { Sidebar } from '@/components/layout/Sidebar';
-import { Wallet, Plus, CreditCard, Banknote, Landmark } from 'lucide-react';
+import { Wallet, Plus, CreditCard, Banknote, Landmark, AlertCircle, Loader2 } from 'lucide-react';
 import { formatCurrency, dollarsToCents } from '@/lib/currency';
 
 export default function AccountsPage() {
@@ -92,7 +92,10 @@ export default function AccountsPage() {
           </div>
 
           <button
-            onClick={() => setShowModal(true)}
+            onClick={() => {
+              setErrorMsg(null);
+              setShowModal(true);
+            }}
             className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-sm shadow-lg shadow-emerald-500/20 transition-all"
           >
             <Plus className="w-4 h-4" />
@@ -100,62 +103,105 @@ export default function AccountsPage() {
           </button>
         </div>
 
-        {/* Tarjetas de Cuentas */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-          {accounts.map((acc) => {
-            const isCredit = acc.type === 'CREDIT_CARD';
-            return (
-              <div
-                key={acc.id}
-                className="bg-slate-900/60 border border-slate-800 rounded-2xl p-5 flex flex-col justify-between relative overflow-hidden"
-              >
-                <div>
-                  <div className="flex items-center justify-between">
-                    <span
-                      className="px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider"
-                      style={{
-                        backgroundColor: `${acc.color || '#10b981'}20`,
-                        color: acc.color || '#10b981',
-                      }}
-                    >
-                      {acc.type.replace('_', ' ')}
-                    </span>
-                    <Wallet className="w-4 h-4 text-slate-500" />
-                  </div>
+        {errorMsg && (
+          <div className="flex items-center gap-2 p-4 rounded-2xl bg-rose-500/10 border border-rose-500/20 text-rose-400 text-xs">
+            <AlertCircle className="w-4 h-4 shrink-0" />
+            <span>{errorMsg}</span>
+          </div>
+        )}
 
-                  <h3 className="text-base font-bold text-white mt-4">{acc.name}</h3>
-                  <p className="text-xs text-slate-400 mt-0.5">
-                    Saldo inicial: {formatCurrency(acc.initial_balance_cents)}
-                  </p>
+        {loading ? (
+          <div className="flex items-center justify-center p-12 text-slate-500 gap-3">
+            <Loader2 className="w-5 h-5 animate-spin" />
+            <span className="text-xs">Cargando cuentas financieras...</span>
+          </div>
+        ) : accounts.length === 0 ? (
+          <div className="bg-slate-900/40 border border-slate-800/80 rounded-2xl p-12 text-center space-y-3">
+            <Wallet className="w-10 h-10 text-slate-600 mx-auto" />
+            <h3 className="text-base font-bold text-slate-300">No tienes cuentas registradas</h3>
+            <p className="text-xs text-slate-500 max-w-md mx-auto">
+              Crea tu primera cuenta bancaria, billetera digital (Nequi, Daviplata) o tarjeta de crédito para comenzar a registrar movimientos.
+            </p>
+            <button
+              onClick={() => {
+                setErrorMsg(null);
+                setShowModal(true);
+              }}
+              className="mt-2 inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 hover:bg-emerald-500/20 text-xs font-semibold transition-all"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span>Añadir mi primera cuenta</span>
+            </button>
+          </div>
+        ) : (
+          /* Tarjetas de Cuentas */
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+            {accounts.map((acc) => {
+              const isCredit = acc.type === 'CREDIT_CARD';
+              return (
+                <div
+                  key={acc.id}
+                  className="bg-slate-900/60 border border-slate-800 rounded-2xl p-5 flex flex-col justify-between relative overflow-hidden"
+                >
+                  <div>
+                    <div className="flex items-center justify-between">
+                      <span
+                        className="px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider"
+                        style={{
+                          backgroundColor: `${acc.color || '#10b981'}20`,
+                          color: acc.color || '#10b981',
+                        }}
+                      >
+                        {acc.type}
+                      </span>
+                      {isCredit ? (
+                        <CreditCard className="w-5 h-5 text-slate-400" />
+                      ) : acc.type === 'CASH' ? (
+                        <Banknote className="w-5 h-5 text-slate-400" />
+                      ) : (
+                        <Landmark className="w-5 h-5 text-slate-400" />
+                      )}
+                    </div>
 
-                  <div className="mt-6 pt-4 border-t border-slate-800/80">
-                    <p className="text-xs text-slate-500">
-                      {isCredit ? 'Deuda Acumulada' : 'Saldo Disponible Actual'}
-                    </p>
-                    <p
-                      className={`text-2xl font-black mt-1 ${
-                        isCredit ? 'text-amber-400' : 'text-emerald-400'
-                      }`}
-                    >
-                      {formatCurrency(acc.current_balance_cents)}
-                    </p>
-                    {isCredit && acc.credit_limit_cents > 0 && (
-                      <p className="text-[11px] text-slate-400 mt-1">
-                        Cupo total: {formatCurrency(acc.credit_limit_cents)}
+                    <h3 className="text-lg font-bold text-white mt-4">{acc.name}</h3>
+
+                    <div className="mt-6 pt-4 border-t border-slate-800/80">
+                      <p className="text-xs text-slate-500">
+                        {isCredit ? 'Deuda Acumulada' : 'Saldo Disponible Actual'}
                       </p>
-                    )}
+                      <p
+                        className={`text-2xl font-black mt-1 ${
+                          isCredit ? 'text-amber-400' : 'text-emerald-400'
+                        }`}
+                      >
+                        {formatCurrency(acc.current_balance_cents)}
+                      </p>
+                      {isCredit && acc.credit_limit_cents > 0 && (
+                        <p className="text-[11px] text-slate-400 mt-1">
+                          Cupo total: {formatCurrency(acc.credit_limit_cents)}
+                        </p>
+                      )}
+                    </div>
                   </div>
                 </div>
-              </div>
-            );
-          })}
-        </div>
+              );
+            })}
+          </div>
+        )}
 
         {/* Modal de Creación */}
         {showModal && (
           <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
             <div className="bg-slate-900 border border-slate-800 rounded-3xl max-w-sm w-full p-6 shadow-2xl">
               <h2 className="text-base font-bold text-white mb-4">Añadir Cuenta Financiera</h2>
+
+              {errorMsg && (
+                <div className="flex items-center gap-2 p-3 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-400 text-xs mb-4">
+                  <AlertCircle className="w-4 h-4 shrink-0" />
+                  <span>{errorMsg}</span>
+                </div>
+              )}
+
               <form onSubmit={handleCreate} className="space-y-4 text-xs">
                 <div>
                   <label className="block text-slate-400 mb-1">Nombre de la Cuenta</label>
@@ -220,9 +266,11 @@ export default function AccountsPage() {
                   </button>
                   <button
                     type="submit"
-                    className="px-5 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold"
+                    disabled={submitting}
+                    className="px-5 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold flex items-center gap-2 disabled:opacity-50"
                   >
-                    Crear Cuenta
+                    {submitting && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                    <span>{submitting ? 'Creando...' : 'Crear Cuenta'}</span>
                   </button>
                 </div>
               </form>
