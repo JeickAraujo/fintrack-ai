@@ -3,18 +3,20 @@ import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
 import { queryOne, execute } from './db';
 
-function getJwtSecret(): string {
+export function getJwtSecret(): string {
   const secret = process.env.JWT_SECRET;
   if (!secret) {
-    if (process.env.NODE_ENV === 'production' && typeof window === 'undefined' && process.env.NEXT_PHASE !== 'phase-production-build') {
-      // Permitir que next build analice los módulos pero fallar si un usuario intenta autenticarse en runtime sin secret
+    if (process.env.NODE_ENV === 'production') {
+      throw new Error(
+        'CONFIGURACIÓN INCOMPLETA: La variable de entorno JWT_SECRET es obligatoria en producción. Configúrala en Vercel con un valor aleatorio de al menos 32 caracteres.'
+      );
     }
-    return process.env.JWT_SECRET || 'fintrack_ai_default_secret_please_set_env_jwt_secret_in_vercel';
+    return 'fintrack_dev_local_secret_min_32_characters_123456';
   }
   return secret;
 }
 
-const TOKEN_COOKIE = 'fintrack_auth_token';
+export const TOKEN_COOKIE = 'fintrack_auth_token';
 
 export interface UserSession {
   id: string;

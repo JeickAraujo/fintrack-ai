@@ -1,6 +1,5 @@
 import { NextResponse } from 'next/server';
 import crypto from 'crypto';
-import { getServiceSupabase } from '@/lib/supabase';
 import { queryOne, execute } from '@/lib/db';
 import { hashPassword, verifyPassword, signToken, seedDefaultUserCategories } from '@/lib/auth';
 
@@ -13,168 +12,24 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Email y contraseña requeridos' }, { status: 400 });
     }
 
-    const hasSupabaseConfig = Boolean(
-      process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-    );
+    const cleanEmail = email.toLowerCase().trim();
 
     // =========================================================================
-    // FLUJO 1: REGISTRO CON SUPABASE (Producción en la Nube)
-    // =========================================================================
-    if (hasSupabaseConfig) {
-      const supabase = getServiceSupabase();
-
-      if (action === 'register') {
-        if (!name) {
-          return NextResponse.json({ error: 'Nombre requerido para registro' }, { status: 400 });
-        }
-
-        // Registrar usuario en Supabase Auth
-        const { data: authData, error: authError } = await supabase.auth.signUp({
-          email: email.toLowerCase().trim(),
-          password,
-          options: {
-            data: {
-              name: name.trim(),
-              currency,
-            },
-          },
-        });
-
-        if (authError) {
-          console.error('[Supabase Auth Register Error]:', authError.message, authError.status);
-          let userFriendly = authError.message;
-          if (authError.message.toLowerCase().includes('already registered')) {
-            userFriendly = 'Este correo electrónico ya tiene una cuenta registrada.';
-          } else if (authError.message.toLowerCase().includes('rate limit')) {
-            userFriendly = 'Demasiados intentos. Espera unos momentos antes de reintentar.';
-          } else if (authError.message.toLowerCase().includes('password')) {
-            userFriendly = 'La contraseña debe tener al menos 6 caracteres.';
-          }
-          return NextResponse.json(
-            {
-              error: userFriendly,
-              details: authError.message,
-            },
-            { status: 400 }
-          );
-        }
-
-        const user = authData.user;
-        if (!user) {
-          return NextResponse.json({ error: 'No se pudo crear el usuario en Supabase' }, { status: 500 });
-        }
-
-        // Si la confirmación por correo está requerida y no hay sesión activa aún
-        const requiresEmailConfirmation = !authData.session && user.identities?.length;
-
-        // Asegurar que el perfil exista en la tabla profiles
-        const { error: profileError } = await supabase
-          .from('profiles')
-          .upsert({
-            id: user.id,
-            name: name.trim(),
-            email: email.toLowerCase().trim(),
-            currency,
-            updated_at: new Date().toISOString(),
-          }, { onConflict: 'id' });
-
-        if (profileError) {
-          console.warn('[Supabase Profiles Table Upsert Warning]:', profileError.message);
-        }
-
-        // Crear cuenta principal por defecto si no existe
-        const { error: accountError } = await supabase
-          .from('accounts')
-          .insert({
-            user_id: user.id,
-            name: 'Cuenta Principal',
-            type: 'CHECKING',
-            initial_balance_cents: 0,
-            current_balance_cents: 0,
-            color: '#10b981',
-          });
-
-        if (accountError) {
-          console.warn('[Supabase Accounts Insert Warning]:', accountError.message);
-        }
-
-        const sessionUser = {
-          id: user.id,
-          name: name.trim(),
-          email: email.toLowerCase().trim(),
-          currency,
-        };
-
-        const token = signToken(sessionUser);
-        const response = NextResponse.json({
-          success: true,
-          user: sessionUser,
-          requiresEmailConfirmation: Boolean(requiresEmailConfirmation),
-          message: requiresEmailConfirmation
-            ? 'Cuenta creada. Revisa tu correo para confirmar la cuenta si la confirmación está activa en Supabase.'
-            : 'Registro exitoso',
-        });
-
-        response.cookies.set('fintrack_auth_token', token, {
-          httpOnly: true,
-          path: '/',
-          maxAge: 60 * 60 * 24 * 30,
-          secure: process.env.NODE_ENV === 'production',
-          sameSite: 'lax',
-        });
-
-        return response;
-      }
-
-      // Login con Supabase Auth
-      const { data: loginData, error: loginError } = await supabase.auth.signInWithPassword({
-        email: email.toLowerCase().trim(),
-        password,
-      });
-
-      if (loginError) {
-        console.error('[Supabase Auth Login Error]:', loginError.message);
-        return NextResponse.json(
-          { error: 'Credenciales inválidas o correo no confirmado' },
-          { status: 401 }
-        );
-      }
-
-      const user = loginData.user;
-      const userName = user.user_metadata?.name || email.split('@')[0];
-      const userCurrency = user.user_metadata?.currency || 'COP';
-
-      const sessionUser = {
-        id: user.id,
-        name: userName,
-        email: user.email || email,
-        currency: userCurrency,
-      };
-
-      const token = signToken(sessionUser);
-      const response = NextResponse.json({ success: true, user: sessionUser });
-      response.cookies.set('fintrack_auth_token', token, {
-        httpOnly: true,
-        path: '/',
-        maxAge: 60 * 60 * 24 * 30,
-        secure: process.env.NODE_ENV === 'production',
-        sameSite: 'lax',
-      });
-
-      return response;
-    }
-
-    // =========================================================================
-    // FLUJO 2: MODO LOCAL PERSISTENTE / FALLBACK SQLITE
+    // REGISTRO UNIFICADO
     // =========================================================================
     if (action === 'register') {
-      if (!name) {
+      if (!name || !name.trim()) {
         return NextResponse.json({ error: 'Nombre requerido para registro' }, { status: 400 });
       }
 
-      const existingUser = await queryOne(`SELECT id FROM users WHERE email = ?`, [email.toLowerCase().trim()]);
+      if (password.length < 6) {
+        return NextResponse.json({ error: 'La contraseña debe tener al menos 6 caracteres' }, { status: 400 });
+      }
+
+      // Verificar si el usuario ya existe
+      const existingUser = await queryOne(`SELECT id FROM users WHERE email = ?`, [cleanEmail]);
       if (existingUser) {
-        return NextResponse.json({ error: 'El usuario ya existe con este correo electrónico' }, { status: 400 });
+        return NextResponse.json({ error: 'Este correo electrónico ya tiene una cuenta registrada.' }, { status: 400 });
       }
 
       const userId = crypto.randomUUID();
@@ -182,47 +37,51 @@ export async function POST(req: Request) {
       const now = new Date().toISOString();
 
       try {
+        // 1. Guardar usuario
         await execute(
           `INSERT INTO users (id, name, email, password_hash, currency, created_at, updated_at)
            VALUES (?, ?, ?, ?, ?, ?, ?)`,
-          [userId, name.trim(), email.toLowerCase().trim(), pwdHash, currency, now, now]
+          [userId, name.trim(), cleanEmail, pwdHash, currency, now, now]
         );
 
+        // 2. Sembrar categorías por defecto
         await seedDefaultUserCategories(userId);
 
+        // 3. Crear cuenta principal por defecto
         const defaultAccountId = crypto.randomUUID();
         await execute(
-          `INSERT INTO accounts (id, user_id, name, type, initial_balance_cents, current_balance_cents, color, created_at)
-           VALUES (?, ?, ?, 'CHECKING', 0, 0, '#10b981', ?)`,
+          `INSERT INTO accounts (id, user_id, name, type, initial_balance_cents, current_balance_cents, color, is_active, created_at)
+           VALUES (?, ?, ?, 'CHECKING', 0, 0, '#10b981', 1, ?)`,
           [defaultAccountId, userId, 'Cuenta Principal', now]
         );
       } catch (dbErr: any) {
-        console.error('[Local SQLite DB Error]:', dbErr);
+        console.error('[Database Registration Error]:', dbErr);
         return NextResponse.json(
-          {
-            error: 'No se pudo guardar el usuario en el almacenamiento local. Si estás en Vercel, configura NEXT_PUBLIC_SUPABASE_URL y NEXT_PUBLIC_SUPABASE_ANON_KEY.',
-          },
+          { error: 'Error al registrar el usuario en la base de datos: ' + (dbErr?.message || String(dbErr)) },
           { status: 500 }
         );
       }
 
-      const sessionUser = { id: userId, name: name.trim(), email: email.toLowerCase().trim(), currency };
+      const sessionUser = { id: userId, name: name.trim(), email: cleanEmail, currency };
       const token = signToken(sessionUser);
 
       const response = NextResponse.json({ success: true, user: sessionUser });
       response.cookies.set('fintrack_auth_token', token, {
         httpOnly: true,
         path: '/',
-        maxAge: 60 * 60 * 24 * 30,
+        maxAge: 60 * 60 * 24 * 30, // 30 días
+        secure: process.env.NODE_ENV === 'production',
         sameSite: 'lax',
       });
       return response;
     }
 
-    // Login Local
+    // =========================================================================
+    // LOGIN UNIFICADO
+    // =========================================================================
     const user = await queryOne<{ id: string; name: string; email: string; password_hash: string; currency: string }>(
       `SELECT id, name, email, password_hash, currency FROM users WHERE email = ?`,
-      [email.toLowerCase().trim()]
+      [cleanEmail]
     );
 
     if (!user || !verifyPassword(password, user.password_hash)) {
@@ -237,15 +96,15 @@ export async function POST(req: Request) {
       httpOnly: true,
       path: '/',
       maxAge: 60 * 60 * 24 * 30,
+      secure: process.env.NODE_ENV === 'production',
       sameSite: 'lax',
     });
     return response;
   } catch (err: any) {
-    console.error('[Auth API General Catch]:', err);
+    console.error('[Auth API General Error]:', err);
     return NextResponse.json(
       {
-        error: 'Error procesando solicitud de autenticación',
-        diag: err?.message || String(err),
+        error: err?.message || 'Error procesando solicitud de autenticación',
       },
       { status: 500 }
     );
