@@ -164,12 +164,12 @@ export default function ImportPage() {
   };
 
   return (
-    <div className="flex min-h-screen bg-slate-950 text-slate-100">
+    <div className="flex flex-col md:flex-row min-h-screen bg-slate-950 text-slate-100">
       <Sidebar />
 
-      <main className="flex-1 overflow-y-auto p-8 max-w-7xl mx-auto space-y-8">
+      <main className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto space-y-6 w-full">
         <div className="border-b border-slate-800/80 pb-6">
-          <h1 className="text-2xl font-black text-white">Importación de Extractos y Notificaciones</h1>
+          <h1 className="text-xl sm:text-2xl font-black text-white">Importación de Extractos y Notificaciones</h1>
           <p className="text-xs text-slate-400 mt-1">
             Motor de ingesta bancaria con detección automática de encabezados, normalización y deduplicación criptográfica.
           </p>

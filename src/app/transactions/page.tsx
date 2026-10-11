@@ -114,13 +114,13 @@ export default function TransactionsPage() {
   });
 
   return (
-    <div className="flex min-h-screen bg-slate-950 text-slate-100">
+    <div className="flex flex-col md:flex-row min-h-screen bg-slate-950 text-slate-100">
       <Sidebar />
 
-      <main className="flex-1 overflow-y-auto p-8 max-w-7xl mx-auto space-y-6">
+      <main className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto space-y-6 w-full">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-800/80 pb-6">
           <div>
-            <h1 className="text-2xl font-black text-white">Registro de Movimientos</h1>
+            <h1 className="text-xl sm:text-2xl font-black text-white">Registro de Movimientos</h1>
             <p className="text-xs text-slate-400 mt-1">
               Control exhaustivo de ingresos, gastos, transferencias y compras a crédito.
             </p>
@@ -128,7 +128,7 @@ export default function TransactionsPage() {
 
           <button
             onClick={() => setShowModal(true)}
-            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-sm shadow-lg shadow-emerald-500/20 transition-all"
+            className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-sm shadow-lg shadow-emerald-500/20 transition-all w-full sm:w-auto"
           >
             <Plus className="w-4 h-4" />
             <span>Nuevo Movimiento</span>
@@ -172,13 +172,13 @@ export default function TransactionsPage() {
               <table className="w-full text-left text-xs">
                 <thead>
                   <tr className="border-b border-slate-800 bg-slate-950/40 text-slate-400 font-semibold">
-                    <th className="py-3.5 px-4">Fecha</th>
-                    <th className="py-3.5 px-4">Tipo</th>
-                    <th className="py-3.5 px-4">Descripción</th>
-                    <th className="py-3.5 px-4">Categoría</th>
-                    <th className="py-3.5 px-4">Cuenta</th>
-                    <th className="py-3.5 px-4">Origen</th>
-                    <th className="py-3.5 px-4 text-right">Valor</th>
+                    <th className="py-3 px-3 sm:px-4 whitespace-nowrap">Fecha</th>
+                    <th className="py-3 px-2 sm:px-4">Tipo</th>
+                    <th className="py-3 px-3 sm:px-4 min-w-[120px]">Descripción</th>
+                    <th className="py-3 px-3 sm:px-4 hidden md:table-cell">Categoría</th>
+                    <th className="py-3 px-3 sm:px-4 hidden sm:table-cell">Cuenta</th>
+                    <th className="py-3 px-3 sm:px-4 hidden lg:table-cell">Origen</th>
+                    <th className="py-3 px-3 sm:px-4 text-right whitespace-nowrap">Valor</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-800/60">
@@ -187,10 +187,10 @@ export default function TransactionsPage() {
                     const isTransfer = tx.type === 'TRANSFER';
                     return (
                       <tr key={tx.id} className="hover:bg-slate-800/30 transition-colors">
-                        <td className="py-3.5 px-4 text-slate-400">{tx.date}</td>
-                        <td className="py-3.5 px-4">
+                        <td className="py-3 px-3 sm:px-4 text-slate-400 whitespace-nowrap">{tx.date}</td>
+                        <td className="py-3 px-2 sm:px-4">
                           <span
-                            className={`px-2 py-0.5 rounded text-[10px] font-semibold uppercase ${
+                            className={`px-1.5 sm:px-2 py-0.5 rounded text-[10px] font-semibold uppercase ${
                               isIncome
                                 ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
                                 : isTransfer
@@ -198,14 +198,17 @@ export default function TransactionsPage() {
                                 : 'bg-rose-500/10 text-rose-400 border border-rose-500/20'
                             }`}
                           >
-                            {tx.type}
+                            {tx.type === 'CREDIT_PURCHASE' ? 'CRÉDITO' : tx.type}
                           </span>
                         </td>
-                        <td className="py-3.5 px-4 font-semibold text-slate-200">
+                        <td className="py-3 px-3 sm:px-4 font-semibold text-slate-200">
                           {tx.description}
+                          <div className="sm:hidden text-[10px] text-slate-400 font-normal mt-0.5">
+                            {tx.account_name} {tx.category_name ? `• ${tx.category_name}` : ''}
+                          </div>
                           {tx.notes && <p className="text-[10px] text-slate-500 font-normal">{tx.notes}</p>}
                         </td>
-                        <td className="py-3.5 px-4">
+                        <td className="py-3 px-3 sm:px-4 hidden md:table-cell">
                           <span
                             className="px-2 py-0.5 rounded text-[11px] font-medium"
                             style={{
@@ -216,10 +219,10 @@ export default function TransactionsPage() {
                             {tx.category_name || 'Sin Categoría'}
                           </span>
                         </td>
-                        <td className="py-3.5 px-4 text-slate-400">{tx.account_name}</td>
-                        <td className="py-3.5 px-4 text-[10px] text-slate-500">{tx.source}</td>
+                        <td className="py-3 px-3 sm:px-4 text-slate-400 hidden sm:table-cell">{tx.account_name}</td>
+                        <td className="py-3 px-3 sm:px-4 text-[10px] text-slate-500 hidden lg:table-cell">{tx.source}</td>
                         <td
-                          className={`py-3.5 px-4 text-right font-bold ${
+                          className={`py-3 px-3 sm:px-4 text-right font-bold whitespace-nowrap ${
                             isIncome
                               ? 'text-emerald-400'
                               : isTransfer
@@ -240,13 +243,13 @@ export default function TransactionsPage() {
 
         {/* Modal de Creación */}
         {showModal && (
-          <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-            <div className="bg-slate-900 border border-slate-800 rounded-3xl max-w-lg w-full p-6 shadow-2xl">
+          <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-3 sm:p-4">
+            <div className="bg-slate-900 border border-slate-800 rounded-3xl max-w-lg w-full p-5 sm:p-6 shadow-2xl max-h-[92vh] overflow-y-auto">
               <h2 className="text-lg font-bold text-white mb-4">Registrar Movimiento</h2>
               <form onSubmit={handleCreateTransaction} className="space-y-4 text-xs">
                 <div>
                   <label className="block text-slate-400 mb-1">Tipo de Movimiento</label>
-                  <div className="grid grid-cols-4 gap-2">
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                     {['EXPENSE', 'INCOME', 'TRANSFER', 'CREDIT_PURCHASE'].map((t) => (
                       <button
                         type="button"

@@ -67,18 +67,18 @@ export default function CopilotPage() {
   };
 
   return (
-    <div className="flex min-h-screen bg-slate-950 text-slate-100">
+    <div className="flex flex-col md:flex-row min-h-screen bg-slate-950 text-slate-100">
       <Sidebar />
 
-      <main className="flex-1 flex flex-col h-screen overflow-hidden p-8 max-w-5xl mx-auto w-full">
-        <div className="border-b border-slate-800/80 pb-4 mb-4 flex items-center justify-between">
+      <main className="flex-1 flex flex-col h-[calc(100vh-3.5rem)] md:h-screen overflow-hidden p-4 sm:p-6 lg:p-8 max-w-5xl mx-auto w-full">
+        <div className="border-b border-slate-800/80 pb-3 sm:pb-4 mb-3 sm:mb-4 flex items-center justify-between shrink-0">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400">
+            <div className="w-9 sm:w-10 h-9 sm:h-10 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400 shrink-0">
               <Sparkles className="w-5 h-5" />
             </div>
             <div>
-              <h1 className="text-xl font-black text-white">FinTrack Copilot</h1>
-              <p className="text-xs text-slate-400">
+              <h1 className="text-lg sm:text-xl font-black text-white">FinTrack Copilot</h1>
+              <p className="text-[11px] sm:text-xs text-slate-400">
                 Consultas deterministas basadas en tus datos financieros reales
               </p>
             </div>

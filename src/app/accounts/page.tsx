@@ -79,13 +79,13 @@ export default function AccountsPage() {
   };
 
   return (
-    <div className="flex min-h-screen bg-slate-950 text-slate-100">
+    <div className="flex flex-col md:flex-row min-h-screen bg-slate-950 text-slate-100">
       <Sidebar />
 
-      <main className="flex-1 overflow-y-auto p-8 max-w-7xl mx-auto space-y-6">
+      <main className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto space-y-6 w-full">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-800/80 pb-6">
           <div>
-            <h1 className="text-2xl font-black text-white">Cuentas y Tarjetas</h1>
+            <h1 className="text-xl sm:text-2xl font-black text-white">Cuentas y Tarjetas</h1>
             <p className="text-xs text-slate-400 mt-1">
               Saldos sincronizados de cuentas de ahorro, corriente, efectivo, billeteras y tarjetas de crédito.
             </p>
@@ -96,7 +96,7 @@ export default function AccountsPage() {
               setErrorMsg(null);
               setShowModal(true);
             }}
-            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-sm shadow-lg shadow-emerald-500/20 transition-all"
+            className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-sm shadow-lg shadow-emerald-500/20 transition-all w-full sm:w-auto"
           >
             <Plus className="w-4 h-4" />
             <span>Nueva Cuenta</span>
@@ -191,8 +191,8 @@ export default function AccountsPage() {
 
         {/* Modal de Creación */}
         {showModal && (
-          <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-            <div className="bg-slate-900 border border-slate-800 rounded-3xl max-w-sm w-full p-6 shadow-2xl">
+          <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-3 sm:p-4">
+            <div className="bg-slate-900 border border-slate-800 rounded-3xl max-w-md w-full p-5 sm:p-6 shadow-2xl max-h-[92vh] overflow-y-auto">
               <h2 className="text-base font-bold text-white mb-4">Añadir Cuenta Financiera</h2>
 
               {errorMsg && (

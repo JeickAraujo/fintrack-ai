@@ -130,32 +130,32 @@ export default function DashboardPage() {
   const currency = data?.user?.currency || 'COP';
 
   return (
-    <div className="flex min-h-screen bg-slate-950 text-slate-100">
+    <div className="flex flex-col md:flex-row min-h-screen bg-slate-950 text-slate-100">
       <Sidebar user={data?.user} />
 
-      <main className="flex-1 overflow-y-auto p-8 max-w-7xl mx-auto space-y-8">
+      <main className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto space-y-6 w-full">
         {/* Header con Saludo y Acciones Rápidas */}
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-800/80 pb-6">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-800/80 pb-6">
           <div>
-            <h1 className="text-2xl font-black text-white tracking-tight flex items-center gap-2">
+            <h1 className="text-xl sm:text-2xl font-black text-white tracking-tight flex items-center gap-2">
               Hola, {data?.user?.name || 'Usuario'} 👋
             </h1>
-            <p className="text-sm text-slate-400 mt-1">
+            <p className="text-xs sm:text-sm text-slate-400 mt-1">
               Aquí está el balance consolidado y las previsiones de tus finanzas.
             </p>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-2.5 sm:gap-3">
             <Link
               href="/copilot"
-              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-slate-900 border border-slate-700 hover:border-emerald-500/50 text-slate-200 hover:text-white transition-all text-sm font-medium shadow-sm"
+              className="inline-flex items-center gap-2 px-3.5 sm:px-4 py-2 sm:py-2.5 rounded-xl bg-slate-900 border border-slate-700 hover:border-emerald-500/50 text-slate-200 hover:text-white transition-all text-xs sm:text-sm font-medium shadow-sm flex-1 sm:flex-initial justify-center"
             >
               <Sparkles className="w-4 h-4 text-emerald-400" />
               <span>Copilot IA</span>
             </Link>
             <Link
               href="/transactions"
-              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-semibold transition-all text-sm shadow-lg shadow-emerald-500/20"
+              className="inline-flex items-center gap-2 px-3.5 sm:px-4 py-2 sm:py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-semibold transition-all text-xs sm:text-sm shadow-lg shadow-emerald-500/20 flex-1 sm:flex-initial justify-center"
             >
               <Plus className="w-4 h-4" />
               <span>Nuevo Movimiento</span>
