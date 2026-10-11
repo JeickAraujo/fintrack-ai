@@ -5,14 +5,22 @@ import { queryAll, execute } from '@/lib/db';
 import { dollarsToCents } from '@/lib/currency';
 
 export async function GET(req: Request) {
-  const session = await getSessionFromRequest(req);
-  if (!session) return NextResponse.json({ error: 'No autorizado' }, { status: 401 });
+  try {
+    const session = await getSessionFromRequest(req);
+    if (!session) return NextResponse.json({ error: 'No autorizado' }, { status: 401 });
 
-  const accounts = await queryAll(
-    `SELECT * FROM accounts WHERE user_id = ? AND is_active = 1 ORDER BY created_at ASC`,
-    [session.id]
-  );
-  return NextResponse.json({ accounts });
+    const accounts = await queryAll(
+      `SELECT * FROM accounts WHERE user_id = ? AND is_active = 1 ORDER BY created_at ASC`,
+      [session.id]
+    );
+    return NextResponse.json({ accounts });
+  } catch (err: any) {
+    console.error('Accounts GET error:', err);
+    return NextResponse.json(
+      { error: 'Error cargando cuentas: ' + (err?.message || String(err)), accounts: [] },
+      { status: 500 }
+    );
+  }
 }
 
 export async function POST(req: Request) {
@@ -41,6 +49,6 @@ export async function POST(req: Request) {
     return NextResponse.json({ success: true, accountId: id });
   } catch (err: any) {
     console.error('Accounts POST error:', err);
-    return NextResponse.json({ error: 'Error creando cuenta' }, { status: 500 });
+    return NextResponse.json({ error: 'Error creando cuenta: ' + (err?.message || String(err)) }, { status: 500 });
   }
 }

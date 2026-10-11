@@ -5,19 +5,27 @@ import { queryAll, queryOne, execute } from '@/lib/db';
 import { recalculateAccountBalance } from '@/lib/financial-engine';
 
 export async function GET(req: Request) {
-  const session = await getSessionFromRequest(req);
-  if (!session) return NextResponse.json({ error: 'No autorizado' }, { status: 401 });
+  try {
+    const session = await getSessionFromRequest(req);
+    if (!session) return NextResponse.json({ error: 'No autorizado' }, { status: 401 });
 
-  const obligations = await queryAll(
-    `SELECT b.*, c.name as category_name, c.color as category_color, a.name as account_name
-     FROM payment_obligations b
-     LEFT JOIN categories c ON b.category_id = c.id
-     LEFT JOIN accounts a ON b.account_id = a.id
-     WHERE b.user_id = ?
-     ORDER BY b.due_date ASC`,
-    [session.id]
-  );
-  return NextResponse.json({ obligations });
+    const obligations = await queryAll(
+      `SELECT b.*, c.name as category_name, c.color as category_color, a.name as account_name
+       FROM payment_obligations b
+       LEFT JOIN categories c ON b.category_id = c.id
+       LEFT JOIN accounts a ON b.account_id = a.id
+       WHERE b.user_id = ?
+       ORDER BY b.due_date ASC`,
+      [session.id]
+    );
+    return NextResponse.json({ obligations });
+  } catch (err: any) {
+    console.error('Obligations GET error:', err);
+    return NextResponse.json(
+      { error: 'Error cargando obligaciones: ' + (err?.message || String(err)), obligations: [] },
+      { status: 500 }
+    );
+  }
 }
 
 export async function POST(req: Request) {
