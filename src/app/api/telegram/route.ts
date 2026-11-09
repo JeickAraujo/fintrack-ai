@@ -17,6 +17,12 @@ import {
 } from '@/lib/telegram';
 
 export async function GET(req: Request) {
+  try {
+    await execute('ALTER TABLE public.users ADD COLUMN IF NOT EXISTS telegram_chat_id TEXT;');
+  } catch (e) {
+    console.warn('[Telegram] Migración telegram_chat_id en GET:', e);
+  }
+
   const { searchParams } = new URL(req.url);
   const isSetup = searchParams.get('setup') === 'true';
 
@@ -41,21 +47,35 @@ export async function GET(req: Request) {
 }
 
 export async function POST(req: Request) {
+  let errorChatId: string | number | null = null;
   try {
     const update = await req.json();
     const message = update.message;
-    if (!message || !message.chat) {
+    if (!message || !message.chat || !message.chat.id) {
       return NextResponse.json({ ok: true });
     }
 
-    const chatId = message.chat.id;
+    const chatId: string | number = message.chat.id;
+    errorChatId = chatId;
     const fromName = message.from?.first_name || 'Usuario';
 
+    // 0. Asegurar columna telegram_chat_id si es Postgres
+    try {
+      await execute('ALTER TABLE public.users ADD COLUMN IF NOT EXISTS telegram_chat_id TEXT;');
+    } catch (migErr) {
+      console.warn('[Telegram] Auto-migración en POST:', migErr);
+    }
+
     // 1. Verificar si el chat_id ya está enlazado a un usuario en FinTrack
-    let user = await queryOne<{ id: string; name: string; email: string; currency: string }>(
-      `SELECT id, name, email, currency FROM users WHERE telegram_chat_id = ? LIMIT 1`,
-      [String(chatId)]
-    );
+    let user = null;
+    try {
+      user = await queryOne<{ id: string; name: string; email: string; currency: string }>(
+        `SELECT id, name, email, currency FROM users WHERE telegram_chat_id = ? LIMIT 1`,
+        [String(chatId)]
+      );
+    } catch (qErr) {
+      console.warn('[Telegram] Error buscando telegram_chat_id:', qErr);
+    }
 
     // Texto o transcripción de audio
     let rawText = (message.text || message.caption || '').trim();
@@ -468,6 +488,16 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: true });
   } catch (err: any) {
     console.error('[Telegram] Error en webhook handler:', err);
+    if (errorChatId) {
+      try {
+        await sendTelegramMessage(
+          errorChatId,
+          `⚠️ Ocurrió un error procesando tu mensaje: <code>${escapeHtml(err?.message || 'Error del servidor')}</code>\n\nPor favor intenta de nuevo.`
+        );
+      } catch (notifyErr) {
+        console.error('[Telegram] Error notificando al usuario:', notifyErr);
+      }
+    }
     return NextResponse.json({ ok: true, error: err?.message || String(err) });
   }
 }

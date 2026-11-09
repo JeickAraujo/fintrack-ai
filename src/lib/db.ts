@@ -35,8 +35,15 @@ async function ensurePostgresConstraints(pool: Pool): Promise<void> {
   try {
     const client = await pool.connect();
     try {
+      // 0. Asegurar columna telegram_chat_id de forma directa e independiente
+      try {
+        await client.query('ALTER TABLE public.users ADD COLUMN IF NOT EXISTS telegram_chat_id TEXT;');
+      } catch (colErr) {
+        console.warn('[DB] Auto-migración telegram_chat_id:', colErr);
+      }
+
       await client.query(`
-        DO $$
+        DO $
         DECLARE
           dup RECORD;
         BEGIN
