@@ -43,7 +43,7 @@ async function ensurePostgresConstraints(pool: Pool): Promise<void> {
       }
 
       await client.query(`
-        DO $
+        DO $$
         DECLARE
           dup RECORD;
         BEGIN
