@@ -17,7 +17,7 @@ fs.writeFileSync(path.join(publicDir, 'icon.svg'), svgContent);
 
 // Intentar renderizar a PNG usando sharp
 try {
-  const sharp = require('C:/Users/ASUS/AppData/Local/OpenAI/Codex/runtimes/cua_node/7d8d3ac5ca9f6767/bin/node_modules/sharp');
+  const sharp = require('sharp');
   const buffer = Buffer.from(svgContent);
 
   Promise.all([

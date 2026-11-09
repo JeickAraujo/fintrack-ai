@@ -1,4 +1,4 @@
--- ==============================================================================
+﻿-- ==============================================================================
 -- FINTRACK AI — ESQUEMA RELACIONAL SEGURO PARA POSTGRESQL / SUPABASE
 -- Ejecuta este script completo en el SQL Editor de tu proyecto Supabase o base de datos PostgreSQL
 -- ==============================================================================
@@ -112,3 +112,17 @@ CREATE INDEX IF NOT EXISTS idx_transactions_account ON public.transactions(accou
 CREATE INDEX IF NOT EXISTS idx_transactions_import_hash ON public.transactions(import_hash);
 CREATE INDEX IF NOT EXISTS idx_obligations_user_due ON public.payment_obligations(user_id, due_date);
 CREATE INDEX IF NOT EXISTS idx_budgets_user_month ON public.budgets(user_id, month_year);
+
+
+-- 8. Procedimiento Almacenado RPC: Incremento atómico de balance
+ALTER TABLE public.accounts ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT timezone('utc'::text, now());
+
+CREATE OR REPLACE FUNCTION increment_account_balance(account_id uuid, amount_cents bigint)
+RETURNS void LANGUAGE plpgsql AS $$
+BEGIN
+  UPDATE public.accounts 
+  SET current_balance_cents = current_balance_cents + amount_cents, 
+      updated_at = timezone('utc'::text, now())
+  WHERE id = account_id;
+END;
+$$;

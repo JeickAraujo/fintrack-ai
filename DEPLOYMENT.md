@@ -1,4 +1,4 @@
-# FinTrack AI — Guía Completa de Despliegue en Producción (Vercel + Supabase)
+﻿# FinTrack AI — Guía Completa de Despliegue en Producción (Vercel + Supabase)
 
 Esta guía describe los pasos exactos para desplegar **FinTrack AI** en producción en Vercel con Supabase PostgreSQL como base de datos unificada y persistente.
 
@@ -29,7 +29,7 @@ Esta guía describe los pasos exactos para desplegar **FinTrack AI** en producci
 
 | Variable | Valor | Obligatorio |
 | :--- | :--- | :--- |
-| `JWT_SECRET` | Cadena aleatoria segura de al menos 32 caracteres (ej: `fintrack_super_secret_jwt_prod_key_2026!`) | **Sí** |
+| `JWT_SECRET` | Cadena aleatoria segura de al menos 32 caracteres (genera uno aleatorio, no uses un ejemplo) | **Sí** |
 | `DATABASE_URL` | La URI de conexión de Supabase copiada en el paso 1 (`postgresql://postgres:...`) | **Sí** |
 | `NODE_ENV` | `production` | **Sí** |
 | `ANTHROPIC_API_KEY` | *(Opcional)* Tu API Key de Anthropic para respuestas avanzadas de IA en Copilot | No |

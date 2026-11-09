@@ -1,6 +1,8 @@
-import { queryAll, queryOne } from './db';
+import crypto from 'crypto';
+import { queryAll, queryOne, execute } from './db';
 import { formatCurrency, centsToDollars } from './currency';
-import { getDashboardMetrics, getBogotaCurrentMonth } from './financial-engine';
+import { getDashboardMetrics, getBogotaCurrentMonth, recalculateAccountBalance } from './financial-engine';
+import { parseNaturalLanguageInput } from './nlp-parser';
 
 export interface CopilotResponse {
   answer: string;
@@ -49,6 +51,109 @@ export async function askCopilot(userId: string, question: string, currency: str
         '¿Cómo voy comparado con el mes anterior?',
       ],
     };
+  }
+
+  // =========================================================================
+  // INTENCIÓN ESPECIAL: REGISTRO DE MOVIMIENTOS POR CHAT (NLP / EDGE FUNCTION)
+  // =========================================================================
+  const isPureQuestion =
+    norm.startsWith('en que gaste') ||
+    norm.startsWith('cuanto gaste') ||
+    norm.startsWith('cuanto puedo gastar') ||
+    norm.startsWith('cual es mi saldo') ||
+    norm.startsWith('que presupuesto') ||
+    norm.startsWith('cuales son mis');
+
+  const hasRecordKeywords = /(?:registra|anota|anotar|agrega|gast[ée]|pagu[ée]|compr[ée]|recib[íi]|ingres[oó]|abono|sueldo|salario|almuerzo|comida|gasolina|uber|didi|mercado)/i.test(question);
+  const parsedItems = !isPureQuestion ? parseNaturalLanguageInput(question) : [];
+
+  if (hasRecordKeywords && parsedItems.length > 0 && !isPureQuestion) {
+    // 1. Si la Edge Function de Supabase está configurada, delegar el registro en ella
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const authKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+    if (supabaseUrl && authKey) {
+      try {
+        const edgeRes = await fetch(`${supabaseUrl}/functions/v1/expenses-from-text`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${authKey}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ text: question, user_id: userId }),
+        });
+
+        if (edgeRes.ok) {
+          const edgeData = await edgeRes.json();
+          if (edgeData.success && edgeData.transaction) {
+            return {
+              answer: `✅ **Transacción registrada exitosamente (vía Edge Function)**:\n\n- **Descripción:** ${edgeData.transaction.description}\n- **Monto:** ${formatCurrency(edgeData.transaction.amount_cents, currency)}\n- **Tipo:** ${edgeData.transaction.type === 'INCOME' ? 'Ingreso 💰' : 'Gasto 🛒'}\n- **Categoría:** ${edgeData.parsed?.category || 'General'}\n- **Método de pago:** ${edgeData.parsed?.method || 'Efectivo'}\n- **Fecha:** ${edgeData.transaction.date}\n\nTu saldo ha sido actualizado automáticamente en la base de datos.`,
+              suggestedActions: [
+                '¿Cuál es mi saldo por cuenta?',
+                '¿En qué gasté más este mes?',
+                '¿Tengo presupuestos excedidos?',
+              ],
+            };
+          }
+        }
+      } catch (edgeErr) {
+        console.warn('[Copilot] Edge Function no disponible, utilizando persistencia local:', edgeErr);
+      }
+    }
+
+    // 2. Registro local directo (Fallback infalible si la Edge Function está offline)
+    try {
+      const item = parsedItems[0];
+      const account = await queryOne<{ id: string }>(
+        `SELECT id FROM accounts WHERE user_id = ? AND is_active = true ORDER BY current_balance_cents DESC LIMIT 1`,
+        [userId]
+      );
+
+      let categoryId: string | null = null;
+      if (item.categorySuggestion) {
+        const cat = await queryOne<{ id: string }>(
+          `SELECT id FROM categories WHERE (user_id = ? OR is_system = true) AND LOWER(name) = LOWER(?) LIMIT 1`,
+          [userId, item.categorySuggestion]
+        );
+        categoryId = cat?.id || null;
+      }
+
+      if (account) {
+        const txId = crypto.randomUUID();
+        const now = new Date().toISOString();
+        await execute(
+          `INSERT INTO transactions 
+           (id, user_id, account_id, category_id, type, amount_cents, date, description, payment_method, status, notes, source, is_recurring, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'CLEARED', ?, 'NLP_COPILOT', false, ?)`,
+          [
+            txId,
+            userId,
+            account.id,
+            categoryId,
+            item.type,
+            item.amountCents,
+            item.date,
+            item.description,
+            'Efectivo',
+            `Registrado por FinTrack Copilot: "${question}"`,
+            now,
+          ]
+        );
+
+        await recalculateAccountBalance(account.id);
+
+        return {
+          answer: `✅ **Transacción registrada exitosamente**:\n\n- **Descripción:** ${item.description}\n- **Monto:** ${formatCurrency(item.amountCents, currency)}\n- **Tipo:** ${item.type === 'INCOME' ? 'Ingreso 💰' : 'Gasto 🛒'}\n- **Categoría:** ${item.categorySuggestion || 'General'}\n- **Fecha:** ${item.date}\n\nTu saldo y tus métricas se han actualizado automáticamente.`,
+          suggestedActions: [
+            '¿Cuál es mi saldo por cuenta?',
+            '¿En qué gasté más este mes?',
+            'Ver movimientos',
+          ],
+        };
+      }
+    } catch (locErr) {
+      console.error('[Copilot] Falló registro local de movimiento:', locErr);
+    }
   }
 
   // =========================================================================
@@ -341,7 +446,93 @@ export async function askCopilot(userId: string, question: string, currency: str
   }
 
   // =========================================================================
-  // FALLBACK OPCIONAL: ANTHROPIC CLAUDE SI EXISTE ANTHROPIC_API_KEY
+  // FALLBACK 1: GROQ AI (LLaMA 3.3 70B) CON CONTEXTO FINANCIERO REAL
+  // =========================================================================
+  if (process.env.GROQ_API_KEY) {
+    try {
+      const metrics = await getDashboardMetrics(userId, currentMonth);
+
+      // Top 3 categorías de mayor gasto
+      const topCategories = await queryAll<{ name: string; total: number }>(
+        `SELECT c.name, COALESCE(SUM(t.amount_cents), 0) as total
+         FROM transactions t
+         JOIN categories c ON t.category_id = c.id
+         WHERE t.user_id = ? AND t.type IN ('EXPENSE', 'CREDIT_PURCHASE') AND t.date LIKE ?
+         GROUP BY c.name ORDER BY total DESC LIMIT 3`,
+        [userId, `${currentMonth}%`]
+      );
+
+      const topCatsText = topCategories.length > 0
+        ? topCategories.map((c) => `- ${c.name}: ${formatCurrency(c.total, currency)}`).join('\n')
+        : '- Sin gastos registrados aún este mes';
+
+      // Obligaciones pendientes
+      const pendingBills = await queryAll<{ name: string; amount_cents: number; due_date: string }>(
+        `SELECT name, amount_cents, due_date FROM payment_obligations
+         WHERE user_id = ? AND status = 'PENDING' ORDER BY due_date ASC LIMIT 3`,
+        [userId]
+      );
+      const pendingBillsText = pendingBills.length > 0
+        ? pendingBills.map((b) => `- ${b.name}: ${formatCurrency(b.amount_cents, currency)} (Vence: ${b.due_date})`).join('\n')
+        : '- No tienes pagos pendientes';
+
+      const systemPrompt = `Eres FinTrack Copilot, un asesor financiero personal experto, empático y cuantitativo para usuarios en Colombia.
+Tienes acceso a los datos financieros REALES del usuario para el mes ${currentMonth} (Moneda: ${currency}):
+- Saldo total disponible: ${formatCurrency(metrics.totalBalanceCents, currency)}
+- Ingresos de este mes: ${formatCurrency(metrics.monthlyIncomeCents, currency)}
+- Gastos de este mes: ${formatCurrency(metrics.monthlyExpenseCents, currency)}
+- Flujo de caja neto: ${formatCurrency(metrics.monthlyCashFlowCents, currency)}
+- Compromisos u obligaciones pendientes: ${formatCurrency(metrics.committedObligationsCents, currency)}
+- Tasa de ahorro actual: ${metrics.savingsRatePercentage}%
+- Categorías con mayor gasto:
+${topCatsText}
+- Próximos vencimientos de pago:
+${pendingBillsText}
+
+Instrucciones:
+1. Responde de manera clara, concisa, profesional y en español formal-amable usando formato Markdown.
+2. Basa tus recomendaciones estrictamente en las cifras reales anteriores.
+3. Si el usuario te pide consejos de ahorro o presupuesto, sugiérele acciones concretas y cuantificadas sobre las categorías en las que más gasta.
+4. No inventes transacciones ni datos inexistentes.`;
+
+      const groqRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${process.env.GROQ_API_KEY}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: 'llama-3.3-70b-versatile',
+          temperature: 0.3,
+          max_tokens: 450,
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: question },
+          ],
+        }),
+      });
+
+      if (groqRes.ok) {
+        const groqData = await groqRes.json();
+        const text = groqData.choices?.[0]?.message?.content;
+        if (text) {
+          return {
+            answer: text,
+            suggestedActions: [
+              '¿En qué gasté más este mes?',
+              '¿Cuál es mi saldo por cuenta?',
+              '¿Qué presupuestos tengo excedidos?',
+            ],
+          };
+        }
+      }
+    } catch (err) {
+      console.warn('[Copilot] Groq API fallback falló:', err);
+    }
+  }
+
+  // =========================================================================
+  // FALLBACK 2: ANTHROPIC CLAUDE SI EXISTE ANTHROPIC_API_KEY
   // =========================================================================
   if (process.env.ANTHROPIC_API_KEY) {
     try {

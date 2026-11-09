@@ -6,12 +6,9 @@ import { queryOne, execute } from './db';
 export function getJwtSecret(): string {
   const secret = process.env.JWT_SECRET;
   if (!secret) {
-    if (process.env.NODE_ENV === 'production') {
-      throw new Error(
-        'CONFIGURACIÓN INCOMPLETA: La variable de entorno JWT_SECRET es obligatoria en producción. Configúrala en Vercel con un valor aleatorio de al menos 32 caracteres.'
-      );
-    }
-    return 'fintrack_dev_local_secret_min_32_characters_123456';
+    throw new Error(
+      'CONFIGURACIÓN INCOMPLETA: La variable de entorno JWT_SECRET es obligatoria. Configúrala en tu entorno o archivo .env local con un valor aleatorio de al menos 32 caracteres.'
+    );
   }
   return secret;
 }

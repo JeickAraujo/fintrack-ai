@@ -7,7 +7,7 @@ services:
       - "3000:3000"
     environment:
       - NODE_ENV=production
-      - JWT_SECRET=fintrack_ai_super_secret_production_key_2026
+      - JWT_SECRET=${JWT_SECRET}
     volumes:
       - fintrack_data:/app/data
 
