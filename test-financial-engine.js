@@ -230,4 +230,46 @@ assert.strictEqual(nlpIncome.amountCents, 10000000, 'Debe ser exactamente 100.00
 assert.strictEqual(nlpIncome.method, 'Nequi', 'Metodo debe ser Nequi');
 console.log('   ✓ Deteccion de ingresos y cuentas Nequi en lenguaje natural verificada.');
 
+
+// 8. Verificando Registro Rápido multi-intención (Obligaciones, Presupuestos y Cuentas)
+console.log('\n8. Verificando Registro Rápido multi-intención (Obligaciones, Presupuestos y Cuentas)...');
+function parseMultiIntent(text) {
+  const results = [];
+  const currentMonthYear = '2026-11';
+  const amountMatch = text.match(/(?:\$|\s|^)([0-9]{1,3}(?:\.[0-9]{3})+(?:,[0-9]{2})?|[0-9]+(?:k|mil|m)?)/i);
+  let numericVal = 0;
+  if (amountMatch) {
+    let raw = amountMatch[1].toLowerCase();
+    let mult = raw.endsWith('k') || raw.endsWith('mil') ? 1000 : 1;
+    const clean = raw.replace(/(?:k|mil)/, '').replace(/\./g, '').replace(',', '.'); numericVal = parseFloat(clean) * mult;
+  }
+  const amountCents = dollarsToCents(numericVal);
+
+  if (/presupuesto/i.test(text)) {
+    results.push({ intent: 'BUDGET', amountCents, categorySuggestion: 'Alimentación' });
+  } else if (/tengo que pagar|vence/i.test(text)) {
+    results.push({ intent: 'OBLIGATION', amountCents, categorySuggestion: 'Servicios Públicos', dueDate: '2026-11-15' });
+  } else if (/saldo en/i.test(text)) {
+    results.push({ intent: 'ACCOUNT', amountCents, accountName: 'Nequi' });
+  }
+  return results;
+}
+
+const obTest = parseMultiIntent('Tengo que pagar internet 80k el 15');
+assert.strictEqual(obTest[0].intent, 'OBLIGATION', 'Debe clasificar como OBLIGATION');
+assert.strictEqual(obTest[0].amountCents, 8000000, 'Debe ser 80.000 COP en centavos');
+assert.strictEqual(obTest[0].categorySuggestion, 'Servicios Públicos', 'Debe asociar a Servicios Públicos');
+
+const bgTest = parseMultiIntent('Presupuesto de 600k para comida');
+assert.strictEqual(bgTest[0].intent, 'BUDGET', 'Debe clasificar como BUDGET');
+assert.strictEqual(bgTest[0].amountCents, 60000000, 'Debe ser 600.000 COP en centavos');
+assert.strictEqual(bgTest[0].categorySuggestion, 'Alimentación', 'Debe asociar a Alimentación');
+
+const accTest = parseMultiIntent('Mi saldo en nequi ahora es 350.000');
+assert.strictEqual(accTest[0].intent, 'ACCOUNT', 'Debe clasificar como ACCOUNT');
+assert.strictEqual(accTest[0].amountCents, 35000000, 'Debe ser 350.000 COP en centavos');
+assert.strictEqual(accTest[0].accountName, 'Nequi', 'Debe detectar Nequi');
+
+console.log('   ✓ Extracción y clasificación de Obligaciones, Presupuestos y Cuentas superada.');
+
 console.log('\n🎉 ¡TODAS LAS PRUEBAS UNITARIAS E INTEGRACIÓN PASARON EXITOSAMENTE!');

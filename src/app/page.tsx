@@ -17,6 +17,8 @@ import {
   ChevronRight,
   CheckCircle2,
   Trash2,
+  CalendarClock,
+  PiggyBank,
   Loader2
 } from 'lucide-react';
 import Link from 'next/link';
@@ -214,7 +216,7 @@ export default function DashboardPage() {
           <div className="flex flex-col sm:flex-row gap-2">
             <input
               type="text"
-              placeholder='Ej: "Hoy gasté 18.000 en almuerzo y 7.000 en transporte"'
+              placeholder='Ej: "Gasté 18k en salchipapa", "Pagar internet 80k el 15", "Presupuesto 500k comida", "Saldo Nequi 350.000"'
               value={quickInput}
               onChange={(e) => setQuickInput(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && handleNlpParse()}
@@ -253,40 +255,56 @@ export default function DashboardPage() {
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                {proposedItems.map((item, idx) => (
-                  <div
-                    key={idx}
-                    className="bg-slate-950/70 border border-slate-800 rounded-xl p-3 flex items-center justify-between"
-                  >
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <span
-                          className={`text-xs px-2 py-0.5 rounded-md font-semibold ${
-                            item.type === 'INCOME'
-                              ? 'bg-emerald-500/20 text-emerald-300'
-                              : 'bg-rose-500/20 text-rose-300'
-                          }`}
-                        >
-                          {item.type === 'INCOME' ? 'Ingreso' : 'Gasto'}
-                        </span>
-                        <p className="text-sm font-semibold text-slate-200">{item.description}</p>
-                      </div>
-                      <p className="text-xs text-slate-400 mt-1">
-                        {formatCurrency(item.amountCents, currency)} • Cat: {item.categorySuggestion || 'General'}
-                        {item.paymentMethod ? ` • ${item.paymentMethod}` : ''}
-                        {accounts.find(a => a.id === (item.suggestedAccountId || selectedAccountId)) ? ` • Cuenta: ${accounts.find(a => a.id === (item.suggestedAccountId || selectedAccountId))?.name}` : ''}
-                      </p>
-                    </div>
+                {proposedItems.map((item, idx) => {
+                  const targetAcc = accounts.find(a => a.id === (item.suggestedAccountId || selectedAccountId));
 
-                    <button
-                      onClick={() => handleConfirmItem(item)}
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-semibold text-xs transition-colors"
+                  let badgeText = item.type === 'INCOME' ? 'Ingreso' : 'Gasto';
+                  let badgeClass = item.type === 'INCOME' ? 'bg-emerald-500/20 text-emerald-300' : 'bg-rose-500/20 text-rose-300';
+                  let buttonText = 'Guardar';
+                  let detailText = `${formatCurrency(item.amountCents, currency)} • Cat: ${item.categorySuggestion || 'General'}${item.paymentMethod ? ` • ${item.paymentMethod}` : ''}${targetAcc ? ` • Cuenta: ${targetAcc.name}` : ''}`;
+
+                  if (item.intent === 'OBLIGATION') {
+                    badgeText = 'Obligación';
+                    badgeClass = 'bg-amber-500/20 text-amber-300';
+                    buttonText = 'Crear Obligación';
+                    detailText = `${formatCurrency(item.amountCents, currency)} • Vence: ${item.dueDate || item.date} • Cat: ${item.categorySuggestion || 'Servicios'}`;
+                  } else if (item.intent === 'BUDGET') {
+                    badgeText = 'Presupuesto';
+                    badgeClass = 'bg-sky-500/20 text-sky-300';
+                    buttonText = 'Fijar Presupuesto';
+                    detailText = `${formatCurrency(item.amountCents, currency)}/mes • Cat: ${item.categorySuggestion || 'General'} • Periodo: ${item.monthYear || 'Este mes'}`;
+                  } else if (item.intent === 'ACCOUNT') {
+                    badgeText = 'Cuenta / Deuda';
+                    badgeClass = 'bg-cyan-500/20 text-cyan-300';
+                    buttonText = item.accountAction === 'CREATE' ? 'Crear Cuenta' : 'Actualizar Saldo';
+                    detailText = `${item.accountName || 'Cuenta'} • Nuevo Saldo: ${formatCurrency(item.amountCents, currency)}`;
+                  }
+
+                  return (
+                    <div
+                      key={idx}
+                      className="bg-slate-950/70 border border-slate-800 rounded-xl p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3"
                     >
-                      <CheckCircle2 className="w-3.5 h-3.5" />
-                      <span>Guardar</span>
-                    </button>
-                  </div>
-                ))}
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className={`text-xs px-2 py-0.5 rounded-md font-semibold ${badgeClass}`}>
+                            {badgeText}
+                          </span>
+                          <p className="text-sm font-semibold text-slate-200">{item.description}</p>
+                        </div>
+                        <p className="text-xs text-slate-400 mt-1">{detailText}</p>
+                      </div>
+
+                      <button
+                        onClick={() => handleConfirmItem(item)}
+                        className="inline-flex items-center justify-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-semibold text-xs transition-colors shrink-0"
+                      >
+                        <CheckCircle2 className="w-3.5 h-3.5" />
+                        <span>{buttonText}</span>
+                      </button>
+                    </div>
+                  );
+                })}
               </div>
             </div>
           )}

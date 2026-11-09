@@ -2,14 +2,16 @@
 
 import React, { useEffect, useState } from 'react';
 import { Sidebar } from '@/components/layout/Sidebar';
-import { Wallet, Plus, CreditCard, Banknote, Landmark, AlertCircle, Loader2 } from 'lucide-react';
-import { formatCurrency, dollarsToCents } from '@/lib/currency';
+import { Wallet, Plus, CreditCard, Banknote, Landmark, AlertCircle, Loader2, Pencil, Trash2 } from 'lucide-react';
+import { formatCurrency, dollarsToCents, centsToDollars } from '@/lib/currency';
 
 export default function AccountsPage() {
   const [accounts, setAccounts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
   const [showModal, setShowModal] = useState(false);
+  const [editingAccount, setEditingAccount] = useState<any | null>(null);
+
   const [formName, setFormName] = useState('');
   const [formType, setFormType] = useState('SAVINGS');
   const [formBalance, setFormBalance] = useState('');
@@ -41,38 +43,94 @@ export default function AccountsPage() {
     loadAccounts();
   }, []);
 
-  const handleCreate = async (e: React.FormEvent) => {
+  const handleOpenNew = () => {
+    setEditingAccount(null);
+    setFormName('');
+    setFormType('SAVINGS');
+    setFormBalance('');
+    setFormCreditLimit('');
+    setFormColor('#10b981');
+    setErrorMsg(null);
+    setShowModal(true);
+  };
+
+  const handleOpenEdit = (acc: any) => {
+    setEditingAccount(acc);
+    setFormName(acc.name);
+    setFormType(acc.type);
+    setFormBalance(String(centsToDollars(acc.current_balance_cents)));
+    setFormCreditLimit(acc.credit_limit_cents ? String(centsToDollars(acc.credit_limit_cents)) : '');
+    setFormColor(acc.color || '#10b981');
+    setErrorMsg(null);
+    setShowModal(true);
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formName) return;
 
     try {
       setSubmitting(true);
       setErrorMsg(null);
-      const res = await fetch('/api/accounts', {
-        method: 'POST',
+
+      const url = '/api/accounts';
+      const method = editingAccount ? 'PUT' : 'POST';
+      const payload: any = {
+        name: formName,
+        type: formType,
+        color: formColor,
+      };
+
+      if (editingAccount) {
+        payload.id = editingAccount.id;
+        payload.currentBalance = parseFloat(formBalance || '0');
+        if (formType === 'CREDIT_CARD') {
+          payload.creditLimit = parseFloat(formCreditLimit || '0');
+        }
+      } else {
+        payload.initialBalance = parseFloat(formBalance || '0');
+        if (formType === 'CREDIT_CARD') {
+          payload.creditLimit = parseFloat(formCreditLimit || '0');
+        }
+      }
+
+      const res = await fetch(url, {
+        method,
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: formName,
-          type: formType,
-          initialBalance: parseFloat(formBalance || '0'),
-          creditLimit: parseFloat(formCreditLimit || '0'),
-          color: formColor,
-        }),
+        body: JSON.stringify(payload),
       });
 
       const json = await res.json();
       if (!res.ok) {
-        throw new Error(json.error || 'Error creando cuenta');
+        throw new Error(json.error || (editingAccount ? 'Error actualizando cuenta' : 'Error creando cuenta'));
       }
 
       setShowModal(false);
-      setFormName('');
-      setFormBalance('');
-      setFormCreditLimit('');
       await loadAccounts();
     } catch (err: any) {
       console.error(err);
-      setErrorMsg(err.message || 'Error al guardar cuenta');
+      setErrorMsg(err.message || 'Error al procesar cuenta');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleDelete = async (accId: string) => {
+    if (!confirm('¿Seguro que deseas desactivar esta cuenta?')) return;
+    try {
+      setSubmitting(true);
+      const res = await fetch(`/api/accounts?id=${accId}`, {
+        method: 'DELETE',
+      });
+      const json = await res.json();
+      if (!res.ok) {
+        throw new Error(json.error || 'Error al eliminar cuenta');
+      }
+      setShowModal(false);
+      await loadAccounts();
+    } catch (err: any) {
+      console.error(err);
+      alert(err.message || 'Error eliminando cuenta');
     } finally {
       setSubmitting(false);
     }
@@ -92,10 +150,7 @@ export default function AccountsPage() {
           </div>
 
           <button
-            onClick={() => {
-              setErrorMsg(null);
-              setShowModal(true);
-            }}
+            onClick={handleOpenNew}
             className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-sm shadow-lg shadow-emerald-500/20 transition-all w-full sm:w-auto"
           >
             <Plus className="w-4 h-4" />
@@ -118,49 +173,49 @@ export default function AccountsPage() {
         ) : accounts.length === 0 ? (
           <div className="bg-slate-900/40 border border-slate-800/80 rounded-2xl p-12 text-center space-y-3">
             <Wallet className="w-10 h-10 text-slate-600 mx-auto" />
-            <h3 className="text-base font-bold text-slate-300">No tienes cuentas registradas</h3>
-            <p className="text-xs text-slate-500 max-w-md mx-auto">
-              Crea tu primera cuenta bancaria, billetera digital (Nequi, Daviplata) o tarjeta de crédito para comenzar a registrar movimientos.
+            <p className="text-sm font-semibold text-slate-300">No tienes cuentas registradas</p>
+            <p className="text-xs text-slate-500 max-w-sm mx-auto">
+              Crea tu primera cuenta de ahorros, billetera o tarjeta de crédito para comenzar a registrar transacciones.
             </p>
-            <button
-              onClick={() => {
-                setErrorMsg(null);
-                setShowModal(true);
-              }}
-              className="mt-2 inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 hover:bg-emerald-500/20 text-xs font-semibold transition-all"
-            >
-              <Plus className="w-3.5 h-3.5" />
-              <span>Añadir mi primera cuenta</span>
-            </button>
           </div>
         ) : (
-          /* Tarjetas de Cuentas */
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {accounts.map((acc) => {
               const isCredit = acc.type === 'CREDIT_CARD';
               return (
                 <div
                   key={acc.id}
-                  className="bg-slate-900/60 border border-slate-800 rounded-2xl p-5 flex flex-col justify-between relative overflow-hidden"
+                  className="bg-slate-900/50 border border-slate-800/80 rounded-2xl p-5 hover:border-slate-700 transition-all flex flex-col justify-between group"
                 >
                   <div>
                     <div className="flex items-center justify-between">
-                      <span
-                        className="px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider"
-                        style={{
-                          backgroundColor: `${acc.color || '#10b981'}20`,
-                          color: acc.color || '#10b981',
-                        }}
+                      <div className="flex items-center gap-2">
+                        <span
+                          className="px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider"
+                          style={{
+                            backgroundColor: `${acc.color || '#10b981'}20`,
+                            color: acc.color || '#10b981',
+                          }}
+                        >
+                          {acc.type}
+                        </span>
+                        {isCredit ? (
+                          <CreditCard className="w-4 h-4 text-slate-400" />
+                        ) : acc.type === 'CASH' ? (
+                          <Banknote className="w-4 h-4 text-slate-400" />
+                        ) : (
+                          <Landmark className="w-4 h-4 text-slate-400" />
+                        )}
+                      </div>
+
+                      <button
+                        onClick={() => handleOpenEdit(acc)}
+                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-800/80 hover:bg-slate-700 text-slate-400 hover:text-white transition-colors text-xs"
+                        title="Editar cuenta"
                       >
-                        {acc.type}
-                      </span>
-                      {isCredit ? (
-                        <CreditCard className="w-5 h-5 text-slate-400" />
-                      ) : acc.type === 'CASH' ? (
-                        <Banknote className="w-5 h-5 text-slate-400" />
-                      ) : (
-                        <Landmark className="w-5 h-5 text-slate-400" />
-                      )}
+                        <Pencil className="w-3.5 h-3.5" />
+                        <span>Editar</span>
+                      </button>
                     </div>
 
                     <h3 className="text-lg font-bold text-white mt-4">{acc.name}</h3>
@@ -189,11 +244,26 @@ export default function AccountsPage() {
           </div>
         )}
 
-        {/* Modal de Creación */}
+        {/* Modal de Creación / Edición */}
         {showModal && (
           <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-3 sm:p-4">
             <div className="bg-slate-900 border border-slate-800 rounded-3xl max-w-md w-full p-5 sm:p-6 shadow-2xl max-h-[92vh] overflow-y-auto">
-              <h2 className="text-base font-bold text-white mb-4">Añadir Cuenta Financiera</h2>
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-base font-bold text-white">
+                  {editingAccount ? 'Editar Cuenta o Deuda' : 'Añadir Cuenta Financiera'}
+                </h2>
+                {editingAccount && (
+                  <button
+                    type="button"
+                    onClick={() => handleDelete(editingAccount.id)}
+                    className="text-xs text-rose-400 hover:text-rose-300 flex items-center gap-1"
+                    title="Desactivar cuenta"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Eliminar</span>
+                  </button>
+                )}
+              </div>
 
               {errorMsg && (
                 <div className="flex items-center gap-2 p-3 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-400 text-xs mb-4">
@@ -202,7 +272,7 @@ export default function AccountsPage() {
                 </div>
               )}
 
-              <form onSubmit={handleCreate} className="space-y-4 text-xs">
+              <form onSubmit={handleSubmit} className="space-y-4 text-xs">
                 <div>
                   <label className="block text-slate-400 mb-1">Nombre de la Cuenta</label>
                   <input
@@ -231,7 +301,11 @@ export default function AccountsPage() {
                 </div>
 
                 <div>
-                  <label className="block text-slate-400 mb-1">Saldo Inicial</label>
+                  <label className="block text-slate-400 mb-1">
+                    {formType === 'CREDIT_CARD'
+                      ? 'Deuda Actual Acumulada ($)'
+                      : (editingAccount ? 'Saldo Actual Disponible ($)' : 'Saldo Inicial ($)')}
+                  </label>
                   <input
                     type="number"
                     step="any"
@@ -244,7 +318,7 @@ export default function AccountsPage() {
 
                 {formType === 'CREDIT_CARD' && (
                   <div>
-                    <label className="block text-slate-400 mb-1">Cupo / Límite de Crédito</label>
+                    <label className="block text-slate-400 mb-1">Cupo / Límite de Crédito ($)</label>
                     <input
                       type="number"
                       step="any"
@@ -270,7 +344,7 @@ export default function AccountsPage() {
                     className="px-5 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold flex items-center gap-2 disabled:opacity-50"
                   >
                     {submitting && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-                    <span>{submitting ? 'Creando...' : 'Crear Cuenta'}</span>
+                    <span>{submitting ? 'Guardando...' : (editingAccount ? 'Guardar Cambios' : 'Crear Cuenta')}</span>
                   </button>
                 </div>
               </form>

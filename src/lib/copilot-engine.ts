@@ -65,43 +65,16 @@ export async function askCopilot(userId: string, question: string, currency: str
     norm.startsWith('cuales son mis') ||
     norm.startsWith('que opinas');
 
-  const hasRecordKeywords = /(?:registra|anota|anotar|agrega|agregaron|consignaron|transfirieron|gast[ée]|pagu[ée]|compr[ée]|recib[íi]|ingres[oó]|abono|sueldo|salario|almuerzo|comida|gasolina|uber|didi|mercado)/i.test(question);
+  const hasRecordKeywords = /(?:registra|anota|anotar|agrega|agregaron|consignaron|transfirieron|gast[ée]|pagu[ée]|compr[ée]|recib[íi]|ingres[oó]|abono|sueldo|salario|almuerzo|comida|gasolina|uber|didi|mercado|presupuesto|presupuestar|factura|vence|vencimiento|tengo que pagar|saldo en|actualizar saldo|deuda)/i.test(question);
 
   if (hasRecordKeywords && !isPureQuestion) {
     try {
       const parsedItems = await parseNaturalLanguageWithAI(question);
       if (parsedItems.length > 0 && parsedItems[0].amountCents > 0) {
         const item = parsedItems[0];
+        const now = new Date().toISOString();
 
-        // Buscar la cuenta correspondiente al método de pago (ej. Nequi) o cuenta activa
-        let targetAccount: { id: string; name: string } | null = null;
-        if (item.paymentMethod && item.paymentMethod.toLowerCase() !== 'efectivo') {
-          targetAccount = await queryOne<{ id: string; name: string }>(
-            `SELECT id, name FROM accounts WHERE user_id = ? AND is_active = true AND LOWER(name) LIKE ? LIMIT 1`,
-            [userId, `%${item.paymentMethod.toLowerCase()}%`]
-          );
-        }
-
-        // Si el usuario especificó Nequi o Daviplata y no existe aún, crearla automáticamente
-        if (!targetAccount && item.paymentMethod && ['nequi', 'daviplata'].includes(item.paymentMethod.toLowerCase())) {
-          const newAccId = crypto.randomUUID();
-          const accName = item.paymentMethod.charAt(0).toUpperCase() + item.paymentMethod.slice(1);
-          const accColor = item.paymentMethod.toLowerCase() === 'nequi' ? '#e11d48' : '#dc2626';
-          await execute(
-            `INSERT INTO accounts (id, user_id, name, type, initial_balance_cents, current_balance_cents, color, is_active, created_at)
-             VALUES (?, ?, ?, 'CHECKING', 0, 0, ?, true, ?)`,
-            [newAccId, userId, accName, accColor, new Date().toISOString()]
-          );
-          targetAccount = { id: newAccId, name: accName };
-        }
-
-        if (!targetAccount) {
-          targetAccount = await queryOne<{ id: string; name: string }>(
-            `SELECT id, name FROM accounts WHERE user_id = ? AND is_active = true ORDER BY current_balance_cents DESC LIMIT 1`,
-            [userId]
-          );
-        }
-
+        // 1. Resolver Categoría
         let categoryId: string | null = null;
         if (item.categorySuggestion) {
           const cleanCat = item.categorySuggestion.split('|')[0].trim();
@@ -121,9 +94,153 @@ export async function askCopilot(userId: string, question: string, currency: str
           }
         }
 
+        // 2. ACCIÓN SEGÚN INTENCIÓN DETECTADA
+
+        // A. OBLIGACIÓN / PAGO PENDIENTE
+        if (item.intent === 'OBLIGATION') {
+          const id = crypto.randomUUID();
+          const dueDate = item.dueDate || item.date || now.substring(0, 10);
+          await execute(
+            `INSERT INTO payment_obligations (id, user_id, name, amount_cents, due_date, frequency, category_id, account_id, status, is_subscription, created_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, NULL, 'PENDING', ?, ?)`,
+            [id, userId, item.description.trim(), item.amountCents, dueDate, item.frequency || 'MONTHLY', categoryId, Boolean(item.isSubscription), now]
+          );
+
+          return {
+            answer: `✅ **Obligación programada exitosamente**:\n\n- **Concepto:** ${item.description}\n- **Monto:** ${formatCurrency(item.amountCents, currency)}\n- **Fecha de vencimiento:** ${dueDate}\n- **Categoría:** ${item.categorySuggestion || 'Servicios Públicos'}\n\nHa sido programada en tus Obligaciones y Pagos pendientes.`,
+            suggestedActions: [
+              '¿Cuáles son mis próximos pagos?',
+              '¿Cuánto dinero puedo gastar hasta fin de mes?',
+              'Ver obligaciones',
+            ],
+          };
+        }
+
+        // B. PRESUPUESTO MENSUAL
+        if (item.intent === 'BUDGET') {
+          const monthYear = item.monthYear || currentMonth;
+          if (!categoryId) {
+            const defCat = await queryOne<{ id: string }>(
+              `SELECT id FROM categories WHERE user_id = ? OR is_system = true ORDER BY id ASC LIMIT 1`,
+              [userId]
+            );
+            categoryId = defCat?.id || null;
+          }
+
+          if (categoryId) {
+            const existing = await queryOne<{ id: string }>(
+              `SELECT id FROM budgets WHERE user_id = ? AND category_id = ? AND month_year = ?`,
+              [userId, categoryId, monthYear]
+            );
+
+            if (existing) {
+              await execute(
+                `UPDATE budgets SET allocated_cents = ? WHERE id = ?`,
+                [item.amountCents, existing.id]
+              );
+            } else {
+              const id = crypto.randomUUID();
+              await execute(
+                `INSERT INTO budgets (id, user_id, category_id, month_year, allocated_cents, created_at)
+                 VALUES (?, ?, ?, ?, ?, ?)`,
+                [id, userId, categoryId, monthYear, item.amountCents, now]
+              );
+            }
+
+            return {
+              answer: `✅ **Presupuesto asignado exitosamente**:\n\n- **Categoría:** ${item.categorySuggestion || 'Alimentación'}\n- **Monto asignado:** ${formatCurrency(item.amountCents, currency)}\n- **Mes:** ${monthYear}\n\nEl seguimiento de este presupuesto ya se encuentra activo en tu Dashboard.`,
+              suggestedActions: [
+                '¿Qué presupuestos tengo excedidos?',
+                '¿En qué gasté más este mes?',
+                'Ver presupuestos',
+              ],
+            };
+          }
+        }
+
+        // C. ACTUALIZACIÓN DE CUENTA / DEUDA
+        if (item.intent === 'ACCOUNT') {
+          const accName = item.accountName || item.paymentMethod || 'Efectivo';
+          let targetAccount = await queryOne<{ id: string; name: string }>(
+            `SELECT id, name FROM accounts WHERE user_id = ? AND is_active = true AND LOWER(name) LIKE ? LIMIT 1`,
+            [userId, `%${accName.toLowerCase()}%`]
+          );
+
+          if (!targetAccount) {
+            const newAccId = crypto.randomUUID();
+            const cleanName = accName.charAt(0).toUpperCase() + accName.slice(1);
+            const accType = item.accountType || 'CHECKING';
+            const color = accType === 'CREDIT_CARD' ? '#f59e0b' : '#10b981';
+            await execute(
+              `INSERT INTO accounts (id, user_id, name, type, initial_balance_cents, current_balance_cents, color, is_active, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, true, ?)`,
+              [newAccId, userId, cleanName, accType, item.amountCents, item.amountCents, color, now]
+            );
+            targetAccount = { id: newAccId, name: cleanName };
+          } else {
+            const existing = await queryOne<any>(`SELECT * FROM accounts WHERE id = ?`, [targetAccount.id]);
+            const incomes = await queryOne<{ total: string | number }>(
+              `SELECT COALESCE(SUM(amount_cents), 0) as total FROM transactions WHERE account_id = ? AND type = 'INCOME'`,
+              [targetAccount.id]
+            );
+            const expenses = await queryOne<{ total: string | number }>(
+              `SELECT COALESCE(SUM(amount_cents), 0) as total FROM transactions WHERE account_id = ? AND type IN ('EXPENSE', 'CREDIT_PURCHASE')`,
+              [targetAccount.id]
+            );
+            const totalIncome = Number(incomes?.total || 0);
+            const totalExpense = Number(expenses?.total || 0);
+            const newInitial = existing.type === 'CREDIT_CARD'
+              ? item.amountCents - totalExpense
+              : item.amountCents - totalIncome + totalExpense;
+
+            await execute(
+              `UPDATE accounts SET initial_balance_cents = ? WHERE id = ?`,
+              [newInitial, targetAccount.id]
+            );
+            await recalculateAccountBalance(targetAccount.id);
+          }
+
+          return {
+            answer: `✅ **Cuenta actualizada exitosamente**:\n\n- **Cuenta:** ${targetAccount.name}\n- **Nuevo Saldo:** ${formatCurrency(item.amountCents, currency)}\n\nTus saldos e indicadores consolidados se han sincronizado con exactitud.`,
+            suggestedActions: [
+              '¿Cuál es mi saldo por cuenta?',
+              '¿Cuánto dinero puedo gastar hasta fin de mes?',
+              'Ver todas las cuentas',
+            ],
+          };
+        }
+
+        // D. MOVIMIENTO HABITUAL (GASTO / INGRESO)
+        let targetAccount: { id: string; name: string } | null = null;
+        if (item.paymentMethod && item.paymentMethod.toLowerCase() !== 'efectivo') {
+          targetAccount = await queryOne<{ id: string; name: string }>(
+            `SELECT id, name FROM accounts WHERE user_id = ? AND is_active = true AND LOWER(name) LIKE ? LIMIT 1`,
+            [userId, `%${item.paymentMethod.toLowerCase()}%`]
+          );
+        }
+
+        if (!targetAccount && item.paymentMethod && ['nequi', 'daviplata'].includes(item.paymentMethod.toLowerCase())) {
+          const newAccId = crypto.randomUUID();
+          const accName = item.paymentMethod.charAt(0).toUpperCase() + item.paymentMethod.slice(1);
+          const accColor = item.paymentMethod.toLowerCase() === 'nequi' ? '#e11d48' : '#dc2626';
+          await execute(
+            `INSERT INTO accounts (id, user_id, name, type, initial_balance_cents, current_balance_cents, color, is_active, created_at)
+             VALUES (?, ?, ?, 'CHECKING', 0, 0, ?, true, ?)`,
+            [newAccId, userId, accName, accColor, now]
+          );
+          targetAccount = { id: newAccId, name: accName };
+        }
+
+        if (!targetAccount) {
+          targetAccount = await queryOne<{ id: string; name: string }>(
+            `SELECT id, name FROM accounts WHERE user_id = ? AND is_active = true ORDER BY current_balance_cents DESC LIMIT 1`,
+            [userId]
+          );
+        }
+
         if (targetAccount) {
           const txId = crypto.randomUUID();
-          const now = new Date().toISOString();
+          const safeAmountCents = Math.round(Number(item.amountCents)) || 0;
           await execute(
             `INSERT INTO transactions 
              (id, user_id, account_id, category_id, type, amount_cents, date, description, payment_method, status, notes, source, is_recurring, created_at)
@@ -134,7 +251,7 @@ export async function askCopilot(userId: string, question: string, currency: str
               targetAccount.id,
               categoryId,
               item.type,
-              item.amountCents,
+              safeAmountCents,
               item.date,
               item.description,
               item.paymentMethod || 'Efectivo',
@@ -160,7 +277,7 @@ export async function askCopilot(userId: string, question: string, currency: str
     }
   }
 
-  // =========================================================================
+// =========================================================================
   // INTENCIÓN 1: GASTO POR CATEGORÍA / EN QUÉ GASTÉ MÁS
   // =========================================================================
   if (
