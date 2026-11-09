@@ -179,6 +179,7 @@ function detectIntent(q) {
   if (norm.includes('vencimiento') || norm.includes('proximos pagos')) return 'UPCOMING_BILLS';
   if (norm.includes('suscripci') || norm.includes('netflix')) return 'SUBSCRIPTIONS';
   if (norm.includes('mes anterior') || norm.includes('comparado')) return 'MONTH_COMPARISON';
+  if (norm.includes('que opinas') || norm.includes('tu opinion') || norm.includes('analisis') || norm.includes('como voy')) return 'OPINION';
   return 'UNKNOWN';
 }
 
@@ -190,8 +191,9 @@ assert.strictEqual(detectIntent('¿Cuáles son mis próximos vencimientos de pag
 assert.strictEqual(detectIntent('¿Qué suscripciones tengo activas?'), 'SUBSCRIPTIONS');
 assert.strictEqual(detectIntent('¿Cómo voy comparado con el mes anterior?'), 'MONTH_COMPARISON');
 assert.strictEqual(detectIntent('ayuda'), 'HELP');
+assert.strictEqual(detectIntent('Que opinas de mis gastos'), 'OPINION');
 assert.strictEqual(detectIntent('¿Cuál es la capital de Francia?'), 'UNKNOWN', 'Pregunta fuera de dominio debe producir UNKNOWN explícito');
-console.log('   ✓ 8 intenciones del Copilot y fallback a UNKNOWN verificados.');
+console.log('   ✓ 9 intenciones del Copilot (incluyendo Opinión y Diagnóstico) y fallback a UNKNOWN verificados.');
 
 
 // 6. Verificando proteccion contra concatenacion de strings en BIGINT y balances
