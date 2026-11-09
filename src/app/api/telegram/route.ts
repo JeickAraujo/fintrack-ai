@@ -38,41 +38,11 @@ export async function GET(req: Request) {
     });
   }
 
-  let groqStatus = 'No probado';
-  const groqKey = process.env.GROQ_API_KEY?.trim();
-  if (groqKey) {
-    try {
-      const gRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${groqKey}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          model: 'openai/gpt-oss-120b',
-          messages: [{ role: 'user', content: 'Di hola en una sola palabra' }],
-          max_tokens: 10,
-        }),
-      });
-      if (gRes.ok) {
-        const cData = await gRes.json();
-        groqStatus = 'OK: ' + cData.choices?.[0]?.message?.content;
-      } else {
-        groqStatus = `HTTP ${gRes.status} - ${await gRes.text()}`;
-      }
-    } catch (e: any) {
-      groqStatus = `Excepción: ${e.message}`;
-    }
-  } else {
-    groqStatus = 'GROQ_API_KEY no encontrada en process.env';
-  }
-
   const info = await getTelegramWebhookInfo();
   return NextResponse.json({
     status: 'Telegram Bot API endpoint active',
     botTokenConfigured: Boolean(getTelegramBotToken()),
-    groqKeyConfigured: Boolean(groqKey),
-    groqLiveStatus: groqStatus,
+    groqConfigured: Boolean(process.env.GROQ_API_KEY),
     info,
   });
 }
