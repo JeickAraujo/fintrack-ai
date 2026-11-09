@@ -446,35 +446,57 @@ export async function askCopilot(userId: string, question: string, currency: str
   }
 
   // =========================================================================
-  // FALLBACK 1: GROQ AI (LLaMA 3.3 70B) CON CONTEXTO FINANCIERO REAL
+  // FALLBACK 1: GROQ AI (LLaMA 3.3 / LLaMA 3.1) CON CONTEXTO FINANCIERO REAL
   // =========================================================================
   if (process.env.GROQ_API_KEY) {
     try {
-      const metrics = await getDashboardMetrics(userId, currentMonth);
+      let metrics = {
+        totalBalanceCents: 0,
+        monthlyIncomeCents: 0,
+        monthlyExpenseCents: 0,
+        monthlyCashFlowCents: 0,
+        committedObligationsCents: 0,
+        savingsRatePercentage: 0,
+      };
 
-      // Top 3 categorías de mayor gasto
-      const topCategories = await queryAll<{ name: string; total: number }>(
-        `SELECT c.name, COALESCE(SUM(t.amount_cents), 0) as total
-         FROM transactions t
-         JOIN categories c ON t.category_id = c.id
-         WHERE t.user_id = ? AND t.type IN ('EXPENSE', 'CREDIT_PURCHASE') AND t.date LIKE ?
-         GROUP BY c.name ORDER BY total DESC LIMIT 3`,
-        [userId, `${currentMonth}%`]
-      );
+      try {
+        metrics = await getDashboardMetrics(userId, currentMonth);
+      } catch (mErr) {
+        console.warn('[Copilot] No se pudieron obtener métricas para Groq:', mErr);
+      }
 
-      const topCatsText = topCategories.length > 0
-        ? topCategories.map((c) => `- ${c.name}: ${formatCurrency(c.total, currency)}`).join('\n')
-        : '- Sin gastos registrados aún este mes';
+      // Top 3 categorías de mayor gasto (usar t.date::text para compatibilidad con Postgres)
+      let topCatsText = '- Sin gastos registrados aún este mes';
+      try {
+        const topCategories = await queryAll<{ name: string; total: number }>(
+          `SELECT c.name, COALESCE(SUM(t.amount_cents), 0) as total
+           FROM transactions t
+           JOIN categories c ON t.category_id = c.id
+           WHERE t.user_id = ? AND t.type IN ('EXPENSE', 'CREDIT_PURCHASE') AND t.date::text LIKE ?
+           GROUP BY c.name ORDER BY total DESC LIMIT 3`,
+          [userId, `${currentMonth}%`]
+        );
+        if (topCategories.length > 0) {
+          topCatsText = topCategories.map((c) => `- ${c.name}: ${formatCurrency(c.total, currency)}`).join('\n');
+        }
+      } catch (cErr) {
+        console.warn('[Copilot] No se pudieron obtener topCategories para Groq:', cErr);
+      }
 
       // Obligaciones pendientes
-      const pendingBills = await queryAll<{ name: string; amount_cents: number; due_date: string }>(
-        `SELECT name, amount_cents, due_date FROM payment_obligations
-         WHERE user_id = ? AND status = 'PENDING' ORDER BY due_date ASC LIMIT 3`,
-        [userId]
-      );
-      const pendingBillsText = pendingBills.length > 0
-        ? pendingBills.map((b) => `- ${b.name}: ${formatCurrency(b.amount_cents, currency)} (Vence: ${b.due_date})`).join('\n')
-        : '- No tienes pagos pendientes';
+      let pendingBillsText = '- No tienes pagos pendientes';
+      try {
+        const pendingBills = await queryAll<{ name: string; amount_cents: number; due_date: string }>(
+          `SELECT name, amount_cents, due_date FROM payment_obligations
+           WHERE user_id = ? AND status = 'PENDING' ORDER BY due_date ASC LIMIT 3`,
+          [userId]
+        );
+        if (pendingBills.length > 0) {
+          pendingBillsText = pendingBills.map((b) => `- ${b.name}: ${formatCurrency(b.amount_cents, currency)} (Vence: ${b.due_date})`).join('\n');
+        }
+      } catch (bErr) {
+        console.warn('[Copilot] No se pudieron obtener obligaciones para Groq:', bErr);
+      }
 
       const systemPrompt = `Eres FinTrack Copilot, un asesor financiero personal experto, empático y cuantitativo para usuarios en Colombia.
 Tienes acceso a los datos financieros REALES del usuario para el mes ${currentMonth} (Moneda: ${currency}):
@@ -490,15 +512,16 @@ ${topCatsText}
 ${pendingBillsText}
 
 Instrucciones:
-1. Responde de manera clara, concisa, profesional y en español formal-amable usando formato Markdown.
+1. Responde de manera clara, concisa, profesional y en español formal-amable usando formato Markdown con viñetas.
 2. Basa tus recomendaciones estrictamente en las cifras reales anteriores.
-3. Si el usuario te pide consejos de ahorro o presupuesto, sugiérele acciones concretas y cuantificadas sobre las categorías en las que más gasta.
+3. Si el usuario te pide consejos o análisis sobre sus gastos o ahorros, dale observaciones prácticas y cuantificadas sobre sus números actuales.
 4. No inventes transacciones ni datos inexistentes.`;
 
-      const groqRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      const apiKey = process.env.GROQ_API_KEY.trim();
+      let groqRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${process.env.GROQ_API_KEY}`,
+          'Authorization': `Bearer ${apiKey}`,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
@@ -511,6 +534,26 @@ Instrucciones:
           ],
         }),
       });
+
+      if (!groqRes.ok) {
+        console.warn(`[Copilot] Groq LLaMA 3.3 falló con status ${groqRes.status}, intentando LLaMA 3.1 8b...`);
+        groqRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${apiKey}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            model: 'llama-3.1-8b-instant',
+            temperature: 0.3,
+            max_tokens: 450,
+            messages: [
+              { role: 'system', content: systemPrompt },
+              { role: 'user', content: question },
+            ],
+          }),
+        });
+      }
 
       if (groqRes.ok) {
         const groqData = await groqRes.json();
@@ -525,9 +568,12 @@ Instrucciones:
             ],
           };
         }
+      } else {
+        const errText = await groqRes.text();
+        console.error('[Copilot] Groq API error response:', errText);
       }
     } catch (err) {
-      console.warn('[Copilot] Groq API fallback falló:', err);
+      console.error('[Copilot] Excepción en Groq API fallback:', err);
     }
   }
 
