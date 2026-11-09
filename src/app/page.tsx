@@ -77,7 +77,11 @@ export default function DashboardPage() {
         body: JSON.stringify({ action: 'parse_nlp', text: quickInput }),
       });
       const json = await res.json();
-      setProposedItems(json.items || []);
+      const items = json.items || [];
+      setProposedItems(items);
+      if (items.length > 0 && items[0].suggestedAccountId) {
+        setSelectedAccountId(items[0].suggestedAccountId);
+      }
     } catch (err) {
       console.error(err);
     } finally {
@@ -96,10 +100,12 @@ export default function DashboardPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           accountId: selectedAccountId,
+          categoryId: item.categoryId || null,
           type: item.type,
           amountCents: item.amountCents,
           date: item.date,
           description: item.description,
+          paymentMethod: item.paymentMethod || 'Efectivo',
           source: 'NLP',
         }),
       });
@@ -258,6 +264,7 @@ export default function DashboardPage() {
                       </div>
                       <p className="text-xs text-slate-400 mt-1">
                         {formatCurrency(item.amountCents, currency)} • Cat: {item.categorySuggestion || 'General'}
+                        {item.paymentMethod ? ` • ${item.paymentMethod}` : ''}
                       </p>
                     </div>
 

@@ -2,9 +2,9 @@ export const dynamic = 'force-dynamic';
 import { NextResponse } from 'next/server';
 import crypto from 'crypto';
 import { getSessionFromRequest } from '@/lib/auth';
-import { parseNaturalLanguageInput, parseBankNotification } from '@/lib/nlp-parser';
+import { parseNaturalLanguageInput, parseNaturalLanguageWithAI, parseBankNotification } from '@/lib/nlp-parser';
 import { parseBankCsv as executeCsvImport } from '@/lib/csv-importer';
-import { execute, queryAll } from '@/lib/db';
+import { execute, queryAll, queryOne } from '@/lib/db';
 import { recalculateAccountBalance } from '@/lib/financial-engine';
 
 export async function POST(req: Request) {
@@ -15,10 +15,34 @@ export async function POST(req: Request) {
     const body = await req.json();
     const { action } = body;
 
-    // 1. Parser de lenguaje natural
+    // 1. Parser de lenguaje natural con IA (Groq)
     if (action === 'parse_nlp') {
       const { text } = body;
-      const items = parseNaturalLanguageInput(text);
+      const items = await parseNaturalLanguageWithAI(text);
+
+      // Enriquecer cada item con categoryId y cuenta sugerida si coincide con el método
+      for (const item of items) {
+        if (item.categorySuggestion) {
+          const cat = await queryOne<{ id: string }>(
+            `SELECT id FROM categories WHERE (user_id = ? OR is_system = true) AND LOWER(name) = LOWER(?) LIMIT 1`,
+            [session.id, item.categorySuggestion]
+          );
+          if (cat) {
+            item.categoryId = cat.id;
+          }
+        }
+
+        if (item.paymentMethod && item.paymentMethod !== 'Efectivo') {
+          const acc = await queryOne<{ id: string }>(
+            `SELECT id FROM accounts WHERE user_id = ? AND is_active = true AND LOWER(name) LIKE ? LIMIT 1`,
+            [session.id, `%${item.paymentMethod.toLowerCase()}%`]
+          );
+          if (acc) {
+            item.suggestedAccountId = acc.id;
+          }
+        }
+      }
+
       return NextResponse.json({ items });
     }
 

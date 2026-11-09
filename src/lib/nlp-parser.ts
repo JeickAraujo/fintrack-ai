@@ -5,14 +5,15 @@ export interface ParsedItem {
   amountCents: number;
   type: 'EXPENSE' | 'INCOME';
   categorySuggestion?: string;
+  categoryId?: string;
+  paymentMethod?: string;
+  suggestedAccountId?: string;
   confidence: number;
   date: string;
 }
 
 /**
- * Parser de lenguaje natural para entradas como:
- * "Hoy gasté 18.000 pesos en almuerzo y 7.000 en transporte"
- * "Ayer recibí 500.000 de sueldo y pagué 120.000 de internet"
+ * Parser de lenguaje natural local con heurísticas y expresiones regulares
  */
 export function parseNaturalLanguageInput(text: string): ParsedItem[] {
   const results: ParsedItem[] = [];
@@ -35,9 +36,8 @@ export function parseNaturalLanguageInput(text: string): ParsedItem[] {
     const trimmed = clause.trim();
     if (!trimmed) continue;
 
-    // Buscar patrones de monto numérico (ej. 18.000, 18000, $18.000, 18k)
-    // Coincide con números con o sin puntos de miles
-    const amountMatch = trimmed.match(/(?:\$|\s|^)([0-9]{1,3}(?:\.[0-9]{3})+(?:,[0-9]{2})?|[0-9]+(?:k|mil)?)(?:\s*(?:pesos|cop|usd|dólares|dolares))?/i);
+    // Buscar patrones de monto numérico (ej. 18.000, 18000, $18.000, 18k, 3M)
+    const amountMatch = trimmed.match(/(?:\$|\s|^)([0-9]{1,3}(?:\.[0-9]{3})+(?:,[0-9]{2})?|[0-9]+(?:k|mil|m)?)(?:\s*(?:pesos|cop|usd|dólares|dolares))?/i);
     
     if (amountMatch) {
       let rawVal = amountMatch[1].toLowerCase();
@@ -45,6 +45,9 @@ export function parseNaturalLanguageInput(text: string): ParsedItem[] {
       if (rawVal.endsWith('k') || rawVal.endsWith('mil')) {
         rawVal = rawVal.replace(/(?:k|mil)/, '');
         multiplier = 1000;
+      } else if (rawVal.endsWith('m')) {
+        rawVal = rawVal.replace(/m/, '');
+        multiplier = 1000000;
       }
       // Limpiar puntos de miles
       const cleanVal = rawVal.replace(/\./g, '').replace(',', '.');
@@ -53,9 +56,17 @@ export function parseNaturalLanguageInput(text: string): ParsedItem[] {
       if (!isNaN(numericVal) && numericVal > 0) {
         const isIncome = /(?:recib[íi]|gan[ée]|ingres[oó]|sueldo|abono|consignaci[oó]n|me pagaron)/i.test(trimmed);
         
-        // Extraer descripción limpiando verbos y montos
+        // Detectar método de pago si se menciona
+        let detectedMethod = 'Efectivo';
+        if (/nequi/i.test(trimmed)) detectedMethod = 'Nequi';
+        else if (/daviplata/i.test(trimmed)) detectedMethod = 'Daviplata';
+        else if (/tarjeta.*(?:d[ée]bito|debito)|d[ée]bito/i.test(trimmed)) detectedMethod = 'Tarjeta débito';
+        else if (/cr[ée]dito|tarjeta/i.test(trimmed)) detectedMethod = 'Crédito';
+        else if (/transferencia|bancolombia/i.test(trimmed)) detectedMethod = 'Transferencia';
+
+        // Extraer descripción limpiando verbos, métodos y montos
         let desc = trimmed
-          .replace(/(?:hoy|ayer|gast[ée]|compr[ée]|recib[íi]|gan[ée]|pagu[ée]|en|de|por|\$|pesos|cop|usd)/gi, '')
+          .replace(/(?:hoy|ayer|gast[ée]|compr[ée]|recib[íi]|gan[ée]|pagu[ée]|en|de|por|\$|pesos|cop|usd|nequi|daviplata|efectivo|tarjeta|debito|débito|credito|crédito)/gi, '')
           .replace(amountMatch[0], '')
           .replace(/\s+/g, ' ')
           .trim();
@@ -67,19 +78,19 @@ export function parseNaturalLanguageInput(text: string): ParsedItem[] {
           desc = desc.charAt(0).toUpperCase() + desc.slice(1);
         }
 
-        // Sugerir categoría por palabras clave
+        // Sugerir categoría por palabras clave con límites de palabra precisos
         let category = isIncome ? 'Salario / Sueldo' : 'Alimentación';
-        if (/almuerzo|cena|comida|restaurante|caf[ée]|desayuno/i.test(trimmed)) {
+        if (/almuerzo|cena|comida|restaurante|caf[ée]|desayuno|salchipapa|pizza|hamburguesa|empanada|arepa|panaderia|mercado|d1|éxito|carulla|sándwich|pollo/i.test(trimmed)) {
           category = 'Alimentación';
-        } else if (/transporte|uber|taxi|gasolina|bus|pasaje/i.test(trimmed)) {
+        } else if (/\b(?:transporte|uber|didi|taxi|bus|pasaje|gasolina|peaje|metro)\b/i.test(trimmed)) {
           category = 'Transporte';
-        } else if (/internet|luz|agua|gas|servicio/i.test(trimmed)) {
+        } else if (/\b(?:internet|luz|agua|gas\b|servicio(?:s)?|energia|epm|enel|claro|tigo)\b/i.test(trimmed)) {
           category = 'Servicios Públicos';
-        } else if (/netflix|spotify|suscripci[oó]n/i.test(trimmed)) {
+        } else if (/netflix|spotify|suscripci[oó]n|prime|disney|apple|icloud/i.test(trimmed)) {
           category = 'Suscripciones';
-        } else if (/arriendo|arriendo|renta/i.test(trimmed)) {
+        } else if (/arriendo|alquiler|renta|hipoteca|administraci[oó]n/i.test(trimmed)) {
           category = 'Vivienda';
-        } else if (/farmacia|medicina|doctor|cita/i.test(trimmed)) {
+        } else if (/farmacia|medicina|doctor|cita|eps|salud/i.test(trimmed)) {
           category = 'Salud y Bienestar';
         }
 
@@ -88,6 +99,7 @@ export function parseNaturalLanguageInput(text: string): ParsedItem[] {
           amountCents: dollarsToCents(numericVal),
           type: isIncome ? 'INCOME' : 'EXPENSE',
           categorySuggestion: category,
+          paymentMethod: detectedMethod,
           confidence: 0.9,
           date: defaultDate,
         });
@@ -96,6 +108,77 @@ export function parseNaturalLanguageInput(text: string): ParsedItem[] {
   }
 
   return results;
+}
+
+/**
+ * Parser impulsado por IA con Groq (LLaMA/GPT-OSS) y fallback heurístico determinista
+ */
+export async function parseNaturalLanguageWithAI(text: string): Promise<ParsedItem[]> {
+  const apiKey = process.env.GROQ_API_KEY?.trim();
+  if (apiKey) {
+    const models = ['openai/gpt-oss-120b', 'openai/gpt-oss-20b', 'qwen/qwen3.8-27b'];
+    const systemPrompt = `Eres un extractor de gastos e ingresos financieros para Colombia.
+Dado un texto libre del usuario, extrae un array JSON de transacciones con esta estructura exacta:
+[
+  {
+    "description": "Nombre claro y limpio del comercio o concepto (ej: Salchipapa)",
+    "amount_cents": 1800000,
+    "category_name": "Alimentación | Transporte | Vivienda | Servicios Públicos | Suscripciones | Salud y Bienestar | Educación | Tecnología | Entretenimiento | Compras Personales | Salario / Sueldo | Honorarios / Freelance | Rendimientos / Inversiones | Otros Ingresos",
+    "payment_method": "Nequi | Daviplata | Efectivo | Tarjeta débito | Crédito | Transferencia",
+    "type": "EXPENSE" o "INCOME",
+    "date": "YYYY-MM-DD"
+  }
+]
+Responde ÚNICAMENTE el array JSON, sin formato markdown ni texto adicional.`;
+
+    for (const model of models) {
+      try {
+        const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${apiKey}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            model,
+            messages: [
+              { role: 'system', content: systemPrompt },
+              { role: 'user', content: text },
+            ],
+            temperature: 0.1,
+          }),
+        });
+
+        if (res.ok) {
+          const data = await res.json();
+          let rawContent = data.choices?.[0]?.message?.content?.trim() || '';
+          if (rawContent.startsWith('```')) {
+            rawContent = rawContent.replace(/^```(?:json)?\n?/, '').replace(/```$/, '').trim();
+          }
+          const parsed = JSON.parse(rawContent);
+          const list = Array.isArray(parsed) ? parsed : [parsed];
+          const todayStr = new Date().toISOString().substring(0, 10);
+
+          if (list.length > 0 && list[0].amount_cents > 0) {
+            return list.map((item: any) => ({
+              description: item.description || 'Movimiento registrado',
+              amountCents: Number(item.amount_cents) || 0,
+              type: item.type === 'INCOME' ? 'INCOME' : 'EXPENSE',
+              categorySuggestion: item.category_name || 'Alimentación',
+              paymentMethod: item.payment_method || 'Efectivo',
+              confidence: 0.98,
+              date: item.date || todayStr,
+            }));
+          }
+        }
+      } catch (err) {
+        console.warn(`[NLP-AI] Error con modelo ${model}:`, err);
+      }
+    }
+  }
+
+  // Fallback determinista local
+  return parseNaturalLanguageInput(text);
 }
 
 /**
