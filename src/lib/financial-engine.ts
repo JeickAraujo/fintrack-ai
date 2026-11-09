@@ -56,17 +56,18 @@ export async function recalculateAccountBalance(accountId: string): Promise<numb
     [accountId]
   );
 
-  const totalIncome = (incomes?.total || 0) + (incomingTransfers?.total || 0);
-  const totalExpense = (expenses?.total || 0) + (outgoingTransfers?.total || 0);
+  const totalIncome = Number(incomes?.total || 0) + Number(incomingTransfers?.total || 0);
+  const totalExpense = Number(expenses?.total || 0) + Number(outgoingTransfers?.total || 0);
+  const initialBal = Number(account.initial_balance_cents || 0);
 
   let newBalanceCents = 0;
   if (account.type === 'CREDIT_CARD') {
     // Para tarjeta de crédito, el saldo representa la deuda acumulada:
     // saldo inicial (deuda) + compras - pagos hacia la tarjeta (transferencias entrantes)
-    newBalanceCents = account.initial_balance_cents + (expenses?.total || 0) - (incomingTransfers?.total || 0);
+    newBalanceCents = initialBal + Number(expenses?.total || 0) - Number(incomingTransfers?.total || 0);
   } else {
     // Para cuentas de débito/ahorros/efectivo
-    newBalanceCents = account.initial_balance_cents + totalIncome - totalExpense;
+    newBalanceCents = initialBal + totalIncome - totalExpense;
   }
 
   await execute(
@@ -146,12 +147,12 @@ export async function getDashboardMetrics(userId: string, targetMonthYear?: stri
     [userId, currentMonth]
   );
 
-  const totalBal = assetAccounts?.total || 0;
-  const inc = monthlyIncome?.total || 0;
-  const exp = monthlyExpense?.total || 0;
-  const comm = committedObligations?.total || 0;
-  const prevExp = prevMonthExpense?.total || 0;
-  const allocBudget = budgets?.totalAllocated || 0;
+  const totalBal = Number(assetAccounts?.total || 0);
+  const inc = Number(monthlyIncome?.total || 0);
+  const exp = Number(monthlyExpense?.total || 0);
+  const comm = Number(committedObligations?.total || 0);
+  const prevExp = Number(prevMonthExpense?.total || 0);
+  const allocBudget = Number(budgets?.totalAllocated || 0);
 
   const cashFlow = inc - exp;
   const savingsRate = inc > 0 ? Math.max(0, Math.round(((inc - exp) / inc) * 100)) : 0;
@@ -174,4 +175,17 @@ export async function getDashboardMetrics(userId: string, targetMonthYear?: stri
     expenseChangePercentage: expenseChange,
     budgetUsedPercentage: budgetUsed,
   };
+}
+
+/**
+ * Recalcula y repara los saldos de todas las cuentas de un usuario a partir de sus transacciones reales.
+ */
+export async function recalculateAllUserAccounts(userId: string): Promise<void> {
+  const userAccounts = await queryAll<{ id: string }>(
+    `SELECT id FROM accounts WHERE user_id = ?`,
+    [userId]
+  );
+  for (const acc of userAccounts) {
+    await recalculateAccountBalance(acc.id);
+  }
 }

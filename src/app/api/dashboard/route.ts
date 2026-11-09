@@ -1,13 +1,16 @@
 export const dynamic = 'force-dynamic';
 import { NextResponse } from 'next/server';
 import { getSessionFromRequest } from '@/lib/auth';
-import { getDashboardMetrics, getBogotaCurrentMonth } from '@/lib/financial-engine';
+import { getDashboardMetrics, getBogotaCurrentMonth, recalculateAllUserAccounts } from '@/lib/financial-engine';
 import { queryAll } from '@/lib/db';
 
 export async function GET(req: Request) {
   try {
     const session = await getSessionFromRequest(req);
     if (!session) return NextResponse.json({ error: 'No autorizado' }, { status: 401 });
+
+    // Auto-reparar saldos de cuentas con base en transacciones reales (corrige sumas con overflow de strings)
+    await recalculateAllUserAccounts(session.id);
 
     const { searchParams } = new URL(req.url);
     const month = searchParams.get('month') || getBogotaCurrentMonth();

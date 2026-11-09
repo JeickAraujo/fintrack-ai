@@ -79,6 +79,14 @@ export default function DashboardPage() {
       const json = await res.json();
       const items = json.items || [];
       setProposedItems(items);
+
+      // Recargar lista de cuentas por si se detectó o inicializó Nequi u otra cuenta
+      const accRes = await fetch('/api/accounts');
+      const accJson = await accRes.json();
+      if (accJson.accounts) {
+        setAccounts(accJson.accounts);
+      }
+
       if (items.length > 0 && items[0].suggestedAccountId) {
         setSelectedAccountId(items[0].suggestedAccountId);
       }
@@ -90,7 +98,8 @@ export default function DashboardPage() {
   };
 
   const handleConfirmItem = async (item: any) => {
-    if (!selectedAccountId) {
+    const accId = item.suggestedAccountId || selectedAccountId;
+    if (!accId) {
       alert('Por favor selecciona una cuenta');
       return;
     }
@@ -99,7 +108,7 @@ export default function DashboardPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          accountId: selectedAccountId,
+          accountId: accId,
           categoryId: item.categoryId || null,
           type: item.type,
           amountCents: item.amountCents,
@@ -265,6 +274,7 @@ export default function DashboardPage() {
                       <p className="text-xs text-slate-400 mt-1">
                         {formatCurrency(item.amountCents, currency)} • Cat: {item.categorySuggestion || 'General'}
                         {item.paymentMethod ? ` • ${item.paymentMethod}` : ''}
+                        {accounts.find(a => a.id === (item.suggestedAccountId || selectedAccountId)) ? ` • Cuenta: ${accounts.find(a => a.id === (item.suggestedAccountId || selectedAccountId))?.name}` : ''}
                       </p>
                     </div>
 

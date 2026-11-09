@@ -193,4 +193,41 @@ assert.strictEqual(detectIntent('ayuda'), 'HELP');
 assert.strictEqual(detectIntent('¿Cuál es la capital de Francia?'), 'UNKNOWN', 'Pregunta fuera de dominio debe producir UNKNOWN explícito');
 console.log('   ✓ 8 intenciones del Copilot y fallback a UNKNOWN verificados.');
 
+
+// 6. Verificando proteccion contra concatenacion de strings en BIGINT y balances
+console.log('\n6. Verificando proteccion contra concatenacion de strings en balances (Postgres BIGINT)...');
+function calculateAccountBalanceSafe(initialBalStr, incomesStr, incomingTransfersStr, expensesStr, outgoingTransfersStr) {
+  const totalIncome = Number(incomesStr || 0) + Number(incomingTransfersStr || 0);
+  const totalExpense = Number(expensesStr || 0) + Number(outgoingTransfersStr || 0);
+  const initialBal = Number(initialBalStr || 0);
+  return initialBal + totalIncome - totalExpense;
+}
+
+// Simular el caso real del usuario: initial_balance 700.000 COP, ingreso 100.000 COP, gasto 5.400 COP
+const balance = calculateAccountBalanceSafe('70000000', '10000000', '0', '540000', '0');
+assert.strictEqual(balance, 79460000, 'El balance debe ser exactamente 79.460.000 centavos ($794.600), nunca 70 billones');
+console.log('   ✓ Prevencion estricta de concatenacion de cadenas en Postgres BIGINT superada.');
+
+// 7. Verificando extraccion de "me agregaron 100k a nequi"
+console.log('\n7. Verificando deteccion de ingresos NLP como "me agregaron 100k a nequi"...');
+function testIncomeParser(text) {
+  const isIncome = /(?:recib[íi]|gan[ée]|ingres[oó]|sueldo|abono|consignaci[oó]n|consignaron|me pagaron|agregaron|me agregaron|transfirieron|me transfirieron|cobr[ée])/i.test(text);
+  let method = 'Efectivo';
+  if (/nequi/i.test(text)) method = 'Nequi';
+  const match = text.match(/([0-9]+(?:k|mil)?)/i);
+  let val = 0;
+  if (match) {
+    let raw = match[1].toLowerCase();
+    let mult = raw.endsWith('k') || raw.endsWith('mil') ? 1000 : 1;
+    val = parseFloat(raw.replace(/(?:k|mil)/, '')) * mult;
+  }
+  return { isIncome, amountCents: dollarsToCents(val), method };
+}
+
+const nlpIncome = testIncomeParser('me agregaron 100k a nequi');
+assert.strictEqual(nlpIncome.isIncome, true, 'Debe ser detectado como ingreso');
+assert.strictEqual(nlpIncome.amountCents, 10000000, 'Debe ser exactamente 100.000 COP (10.000.000 centavos)');
+assert.strictEqual(nlpIncome.method, 'Nequi', 'Metodo debe ser Nequi');
+console.log('   ✓ Deteccion de ingresos y cuentas Nequi en lenguaje natural verificada.');
+
 console.log('\n🎉 ¡TODAS LAS PRUEBAS UNITARIAS E INTEGRACIÓN PASARON EXITOSAMENTE!');

@@ -23,20 +23,39 @@ export async function POST(req: Request) {
       // Enriquecer cada item con categoryId y cuenta sugerida si coincide con el método
       for (const item of items) {
         if (item.categorySuggestion) {
-          const cat = await queryOne<{ id: string }>(
-            `SELECT id FROM categories WHERE (user_id = ? OR is_system = true) AND LOWER(name) = LOWER(?) LIMIT 1`,
-            [session.id, item.categorySuggestion]
+          const cleanCat = item.categorySuggestion.split('|')[0].trim();
+          let cat = await queryOne<{ id: string; name: string }>(
+            `SELECT id, name FROM categories WHERE (user_id = ? OR is_system = true) AND LOWER(name) = LOWER(?) LIMIT 1`,
+            [session.id, cleanCat]
           );
+          if (!cat) {
+            cat = await queryOne<{ id: string; name: string }>(
+              `SELECT id, name FROM categories WHERE (user_id = ? OR is_system = true) AND (LOWER(name) LIKE ? OR LOWER(?) LIKE LOWER(CONCAT('%', name, '%'))) LIMIT 1`,
+              [session.id, `%${cleanCat.toLowerCase()}%`, cleanCat]
+            );
+          }
           if (cat) {
             item.categoryId = cat.id;
+            item.categorySuggestion = cat.name;
           }
         }
 
-        if (item.paymentMethod && item.paymentMethod !== 'Efectivo') {
-          const acc = await queryOne<{ id: string }>(
+        if (item.paymentMethod && item.paymentMethod.toLowerCase() !== 'efectivo') {
+          let acc = await queryOne<{ id: string }>(
             `SELECT id FROM accounts WHERE user_id = ? AND is_active = true AND LOWER(name) LIKE ? LIMIT 1`,
             [session.id, `%${item.paymentMethod.toLowerCase()}%`]
           );
+          if (!acc && ['nequi', 'daviplata'].includes(item.paymentMethod.toLowerCase())) {
+            const newAccId = crypto.randomUUID();
+            const accName = item.paymentMethod.charAt(0).toUpperCase() + item.paymentMethod.slice(1);
+            const accColor = item.paymentMethod.toLowerCase() === 'nequi' ? '#e11d48' : '#dc2626';
+            await execute(
+              `INSERT INTO accounts (id, user_id, name, type, initial_balance_cents, current_balance_cents, color, is_active, created_at)
+               VALUES (?, ?, ?, 'CHECKING', 0, 0, ?, true, ?)`,
+              [newAccId, session.id, accName, accColor, new Date().toISOString()]
+            );
+            acc = { id: newAccId };
+          }
           if (acc) {
             item.suggestedAccountId = acc.id;
           }

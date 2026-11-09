@@ -54,7 +54,7 @@ export function parseNaturalLanguageInput(text: string): ParsedItem[] {
       const numericVal = parseFloat(cleanVal) * multiplier;
 
       if (!isNaN(numericVal) && numericVal > 0) {
-        const isIncome = /(?:recib[íi]|gan[ée]|ingres[oó]|sueldo|abono|consignaci[oó]n|me pagaron)/i.test(trimmed);
+        const isIncome = /(?:recib[íi]|gan[ée]|ingres[oó]|sueldo|abono|consignaci[oó]n|consignaron|me pagaron|agregaron|me agregaron|transfirieron|me transfirieron|cobr[ée])/i.test(trimmed);
         
         // Detectar método de pago si se menciona
         let detectedMethod = 'Efectivo';
@@ -66,7 +66,7 @@ export function parseNaturalLanguageInput(text: string): ParsedItem[] {
 
         // Extraer descripción limpiando verbos, métodos y montos
         let desc = trimmed
-          .replace(/(?:hoy|ayer|gast[ée]|compr[ée]|recib[íi]|gan[ée]|pagu[ée]|en|de|por|\$|pesos|cop|usd|nequi|daviplata|efectivo|tarjeta|debito|débito|credito|crédito)/gi, '')
+          .replace(/(?:hoy|ayer|gast[ée]|compr[ée]|recib[íi]|gan[ée]|pagu[ée]|agregaron|consignaron|transfirieron|en|de|por|a|para|\$|pesos|cop|usd|nequi|daviplata|efectivo|tarjeta|debito|débito|credito|crédito)/gi, '').replace(/\b(?:me|le|nos|te)\b/gi, '')
           .replace(amountMatch[0], '')
           .replace(/\s+/g, ' ')
           .trim();
@@ -79,7 +79,7 @@ export function parseNaturalLanguageInput(text: string): ParsedItem[] {
         }
 
         // Sugerir categoría por palabras clave con límites de palabra precisos
-        let category = isIncome ? 'Salario / Sueldo' : 'Alimentación';
+        let category = isIncome ? 'Otros Ingresos' : 'Alimentación';
         if (/almuerzo|cena|comida|restaurante|caf[ée]|desayuno|salchipapa|pizza|hamburguesa|empanada|arepa|panaderia|mercado|d1|éxito|carulla|sándwich|pollo/i.test(trimmed)) {
           category = 'Alimentación';
         } else if (/\b(?:transporte|uber|didi|taxi|bus|pasaje|gasolina|peaje|metro)\b/i.test(trimmed)) {
@@ -121,14 +121,25 @@ export async function parseNaturalLanguageWithAI(text: string): Promise<ParsedIt
 Dado un texto libre del usuario, extrae un array JSON de transacciones con esta estructura exacta:
 [
   {
-    "description": "Nombre claro y limpio del comercio o concepto (ej: Salchipapa)",
+    "description": "Nombre claro y limpio del comercio o concepto (ej: Salchipapa o Depósito)",
     "amount_cents": 1800000,
-    "category_name": "Alimentación | Transporte | Vivienda | Servicios Públicos | Suscripciones | Salud y Bienestar | Educación | Tecnología | Entretenimiento | Compras Personales | Salario / Sueldo | Honorarios / Freelance | Rendimientos / Inversiones | Otros Ingresos",
-    "payment_method": "Nequi | Daviplata | Efectivo | Tarjeta débito | Crédito | Transferencia",
-    "type": "EXPENSE" o "INCOME",
+    "category_name": "Alimentación",
+    "payment_method": "Nequi",
+    "type": "EXPENSE",
     "date": "YYYY-MM-DD"
   }
 ]
+
+REGLAS ESTRICTAS DE CATEGORÍA (debes elegir exactamente UNA sin barras ni plecas):
+- Gastos: Alimentación, Transporte, Vivienda, Servicios Públicos, Suscripciones, Salud y Bienestar, Educación, Tecnología, Entretenimiento, Compras Personales, Tarjetas y Deudas.
+- Ingresos: Salario / Sueldo, Honorarios / Freelance, Rendimientos / Inversiones, Otros Ingresos.
+
+REGLAS DE TIPO Y MONTO:
+- "100k" = 100000 pesos = 10000000 amount_cents.
+- "18k" = 18000 pesos = 1800000 amount_cents.
+- "me agregaron", "consignaron", "recibí", "transfirieron" -> type: "INCOME".
+- "gasté", "pagué", "compré" -> type: "EXPENSE".
+
 Responde ÚNICAMENTE el array JSON, sin formato markdown ni texto adicional.`;
 
     for (const model of models) {

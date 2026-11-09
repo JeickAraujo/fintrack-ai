@@ -2,7 +2,7 @@ import crypto from 'crypto';
 import { queryAll, queryOne, execute } from './db';
 import { formatCurrency, centsToDollars } from './currency';
 import { getDashboardMetrics, getBogotaCurrentMonth, recalculateAccountBalance } from './financial-engine';
-import { parseNaturalLanguageInput } from './nlp-parser';
+import { parseNaturalLanguageInput, parseNaturalLanguageWithAI } from './nlp-parser';
 
 export interface CopilotResponse {
   answer: string;
@@ -54,7 +54,7 @@ export async function askCopilot(userId: string, question: string, currency: str
   }
 
   // =========================================================================
-  // INTENCIÓN ESPECIAL: REGISTRO DE MOVIMIENTOS POR CHAT (NLP / EDGE FUNCTION)
+  // INTENCIÓN ESPECIAL: REGISTRO DE MOVIMIENTOS POR CHAT (NLP / GROQ AI)
   // =========================================================================
   const isPureQuestion =
     norm.startsWith('en que gaste') ||
@@ -62,97 +62,101 @@ export async function askCopilot(userId: string, question: string, currency: str
     norm.startsWith('cuanto puedo gastar') ||
     norm.startsWith('cual es mi saldo') ||
     norm.startsWith('que presupuesto') ||
-    norm.startsWith('cuales son mis');
+    norm.startsWith('cuales son mis') ||
+    norm.startsWith('que opinas');
 
-  const hasRecordKeywords = /(?:registra|anota|anotar|agrega|gast[ée]|pagu[ée]|compr[ée]|recib[íi]|ingres[oó]|abono|sueldo|salario|almuerzo|comida|gasolina|uber|didi|mercado)/i.test(question);
-  const parsedItems = !isPureQuestion ? parseNaturalLanguageInput(question) : [];
+  const hasRecordKeywords = /(?:registra|anota|anotar|agrega|agregaron|consignaron|transfirieron|gast[ée]|pagu[ée]|compr[ée]|recib[íi]|ingres[oó]|abono|sueldo|salario|almuerzo|comida|gasolina|uber|didi|mercado)/i.test(question);
 
-  if (hasRecordKeywords && parsedItems.length > 0 && !isPureQuestion) {
-    // 1. Si la Edge Function de Supabase está configurada, delegar el registro en ella
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-    const authKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  if (hasRecordKeywords && !isPureQuestion) {
+    try {
+      const parsedItems = await parseNaturalLanguageWithAI(question);
+      if (parsedItems.length > 0 && parsedItems[0].amountCents > 0) {
+        const item = parsedItems[0];
 
-    if (supabaseUrl && authKey) {
-      try {
-        const edgeRes = await fetch(`${supabaseUrl}/functions/v1/expenses-from-text`, {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${authKey}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({ text: question, user_id: userId }),
-        });
+        // Buscar la cuenta correspondiente al método de pago (ej. Nequi) o cuenta activa
+        let targetAccount: { id: string; name: string } | null = null;
+        if (item.paymentMethod && item.paymentMethod.toLowerCase() !== 'efectivo') {
+          targetAccount = await queryOne<{ id: string; name: string }>(
+            `SELECT id, name FROM accounts WHERE user_id = ? AND is_active = true AND LOWER(name) LIKE ? LIMIT 1`,
+            [userId, `%${item.paymentMethod.toLowerCase()}%`]
+          );
+        }
 
-        if (edgeRes.ok) {
-          const edgeData = await edgeRes.json();
-          if (edgeData.success && edgeData.transaction) {
-            return {
-              answer: `✅ **Transacción registrada exitosamente (vía Edge Function)**:\n\n- **Descripción:** ${edgeData.transaction.description}\n- **Monto:** ${formatCurrency(edgeData.transaction.amount_cents, currency)}\n- **Tipo:** ${edgeData.transaction.type === 'INCOME' ? 'Ingreso 💰' : 'Gasto 🛒'}\n- **Categoría:** ${edgeData.parsed?.category || 'General'}\n- **Método de pago:** ${edgeData.parsed?.method || 'Efectivo'}\n- **Fecha:** ${edgeData.transaction.date}\n\nTu saldo ha sido actualizado automáticamente en la base de datos.`,
-              suggestedActions: [
-                '¿Cuál es mi saldo por cuenta?',
-                '¿En qué gasté más este mes?',
-                '¿Tengo presupuestos excedidos?',
-              ],
-            };
+        // Si el usuario especificó Nequi o Daviplata y no existe aún, crearla automáticamente
+        if (!targetAccount && item.paymentMethod && ['nequi', 'daviplata'].includes(item.paymentMethod.toLowerCase())) {
+          const newAccId = crypto.randomUUID();
+          const accName = item.paymentMethod.charAt(0).toUpperCase() + item.paymentMethod.slice(1);
+          const accColor = item.paymentMethod.toLowerCase() === 'nequi' ? '#e11d48' : '#dc2626';
+          await execute(
+            `INSERT INTO accounts (id, user_id, name, type, initial_balance_cents, current_balance_cents, color, is_active, created_at)
+             VALUES (?, ?, ?, 'CHECKING', 0, 0, ?, true, ?)`,
+            [newAccId, userId, accName, accColor, new Date().toISOString()]
+          );
+          targetAccount = { id: newAccId, name: accName };
+        }
+
+        if (!targetAccount) {
+          targetAccount = await queryOne<{ id: string; name: string }>(
+            `SELECT id, name FROM accounts WHERE user_id = ? AND is_active = true ORDER BY current_balance_cents DESC LIMIT 1`,
+            [userId]
+          );
+        }
+
+        let categoryId: string | null = null;
+        if (item.categorySuggestion) {
+          const cleanCat = item.categorySuggestion.split('|')[0].trim();
+          let cat = await queryOne<{ id: string; name: string }>(
+            `SELECT id, name FROM categories WHERE (user_id = ? OR is_system = true) AND LOWER(name) = LOWER(?) LIMIT 1`,
+            [userId, cleanCat]
+          );
+          if (!cat) {
+            cat = await queryOne<{ id: string; name: string }>(
+              `SELECT id, name FROM categories WHERE (user_id = ? OR is_system = true) AND (LOWER(name) LIKE ? OR LOWER(?) LIKE LOWER(CONCAT('%', name, '%'))) LIMIT 1`,
+              [userId, `%${cleanCat.toLowerCase()}%`, cleanCat]
+            );
+          }
+          if (cat) {
+            categoryId = cat.id;
+            item.categorySuggestion = cat.name;
           }
         }
-      } catch (edgeErr) {
-        console.warn('[Copilot] Edge Function no disponible, utilizando persistencia local:', edgeErr);
-      }
-    }
 
-    // 2. Registro local directo (Fallback infalible si la Edge Function está offline)
-    try {
-      const item = parsedItems[0];
-      const account = await queryOne<{ id: string }>(
-        `SELECT id FROM accounts WHERE user_id = ? AND is_active = true ORDER BY current_balance_cents DESC LIMIT 1`,
-        [userId]
-      );
+        if (targetAccount) {
+          const txId = crypto.randomUUID();
+          const now = new Date().toISOString();
+          await execute(
+            `INSERT INTO transactions 
+             (id, user_id, account_id, category_id, type, amount_cents, date, description, payment_method, status, notes, source, is_recurring, created_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'CLEARED', ?, 'NLP_COPILOT', false, ?)`,
+            [
+              txId,
+              userId,
+              targetAccount.id,
+              categoryId,
+              item.type,
+              item.amountCents,
+              item.date,
+              item.description,
+              item.paymentMethod || 'Efectivo',
+              `Registrado por FinTrack Copilot: "${question}"`,
+              now,
+            ]
+          );
 
-      let categoryId: string | null = null;
-      if (item.categorySuggestion) {
-        const cat = await queryOne<{ id: string }>(
-          `SELECT id FROM categories WHERE (user_id = ? OR is_system = true) AND LOWER(name) = LOWER(?) LIMIT 1`,
-          [userId, item.categorySuggestion]
-        );
-        categoryId = cat?.id || null;
-      }
+          await recalculateAccountBalance(targetAccount.id);
 
-      if (account) {
-        const txId = crypto.randomUUID();
-        const now = new Date().toISOString();
-        await execute(
-          `INSERT INTO transactions 
-           (id, user_id, account_id, category_id, type, amount_cents, date, description, payment_method, status, notes, source, is_recurring, created_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'CLEARED', ?, 'NLP_COPILOT', false, ?)`,
-          [
-            txId,
-            userId,
-            account.id,
-            categoryId,
-            item.type,
-            item.amountCents,
-            item.date,
-            item.description,
-            'Efectivo',
-            `Registrado por FinTrack Copilot: "${question}"`,
-            now,
-          ]
-        );
-
-        await recalculateAccountBalance(account.id);
-
-        return {
-          answer: `✅ **Transacción registrada exitosamente**:\n\n- **Descripción:** ${item.description}\n- **Monto:** ${formatCurrency(item.amountCents, currency)}\n- **Tipo:** ${item.type === 'INCOME' ? 'Ingreso 💰' : 'Gasto 🛒'}\n- **Categoría:** ${item.categorySuggestion || 'General'}\n- **Fecha:** ${item.date}\n\nTu saldo y tus métricas se han actualizado automáticamente.`,
-          suggestedActions: [
-            '¿Cuál es mi saldo por cuenta?',
-            '¿En qué gasté más este mes?',
-            'Ver movimientos',
-          ],
-        };
+          return {
+            answer: `✅ **${item.type === 'INCOME' ? 'Ingreso registrado' : 'Gasto registrado'} exitosamente**:\n\n- **Descripción:** ${item.description}\n- **Monto:** ${formatCurrency(item.amountCents, currency)}\n- **Tipo:** ${item.type === 'INCOME' ? 'Ingreso 💰' : 'Gasto 🛒'}\n- **Cuenta:** ${targetAccount.name}\n- **Categoría:** ${item.categorySuggestion || 'General'}\n- **Fecha:** ${item.date}\n\nTu saldo y tus métricas se han actualizado con exactitud.`,
+            suggestedActions: [
+              '¿Cuál es mi saldo por cuenta?',
+              '¿En qué gasté más este mes?',
+              'Ver movimientos',
+            ],
+          };
+        }
       }
     } catch (locErr) {
-      console.error('[Copilot] Falló registro local de movimiento:', locErr);
+      console.error('[Copilot] Falló registro inteligente de movimiento:', locErr);
     }
   }
 
@@ -243,7 +247,7 @@ export async function askCopilot(userId: string, question: string, currency: str
 
     const totalAssets = userAccounts
       .filter((a) => a.type !== 'CREDIT_CARD')
-      .reduce((sum, a) => sum + a.current_balance_cents, 0);
+      .reduce((sum, a) => sum + Number(a.current_balance_cents || 0), 0);
 
     return {
       answer: `Aquí está el desglose de tus saldos actuales:\n\n${list}\n\n**Saldo líquido total disponible:** ${formatCurrency(totalAssets, currency)}.`,
@@ -287,7 +291,7 @@ export async function askCopilot(userId: string, question: string, currency: str
       };
     }
 
-    const exceeded = budgetsWithSpent.filter((b) => b.spent_cents > b.allocated_cents);
+    const exceeded = budgetsWithSpent.filter((b) => Number(b.spent_cents) > Number(b.allocated_cents));
     const warning = budgetsWithSpent.filter(
       (b) => b.spent_cents <= b.allocated_cents && b.spent_cents >= b.allocated_cents * 0.8
     );

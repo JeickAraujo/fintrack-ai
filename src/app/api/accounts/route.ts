@@ -4,11 +4,15 @@ import crypto from 'crypto';
 import { getSessionFromRequest, ensureDefaultAccount } from '@/lib/auth';
 import { queryAll, execute } from '@/lib/db';
 import { dollarsToCents } from '@/lib/currency';
+import { recalculateAllUserAccounts } from '@/lib/financial-engine';
 
 export async function GET(req: Request) {
   try {
     const session = await getSessionFromRequest(req);
     if (!session) return NextResponse.json({ error: 'No autorizado' }, { status: 401 });
+
+    // Auto-reparar saldos de cuentas con base en transacciones reales
+    await recalculateAllUserAccounts(session.id);
 
     let accounts = await queryAll(
       `SELECT * FROM accounts WHERE user_id = ? AND is_active IS TRUE ORDER BY created_at ASC`,
