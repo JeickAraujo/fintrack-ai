@@ -518,44 +518,40 @@ Instrucciones:
 4. No inventes transacciones ni datos inexistentes.`;
 
       const apiKey = process.env.GROQ_API_KEY.trim();
-      let groqRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${apiKey}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          model: 'llama-3.3-70b-versatile',
-          temperature: 0.3,
-          max_tokens: 450,
-          messages: [
-            { role: 'system', content: systemPrompt },
-            { role: 'user', content: question },
-          ],
-        }),
-      });
+      // En Groq los modelos compatibles son openai/gpt-oss-120b y openai/gpt-oss-20b
+      const modelsToTry = ['openai/gpt-oss-120b', 'openai/gpt-oss-20b', 'qwen/qwen3.8-27b'];
+      let groqRes: Response | null = null;
 
-      if (!groqRes.ok) {
-        console.warn(`[Copilot] Groq LLaMA 3.3 falló con status ${groqRes.status}, intentando LLaMA 3.1 8b...`);
-        groqRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${apiKey}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            model: 'llama-3.1-8b-instant',
-            temperature: 0.3,
-            max_tokens: 450,
-            messages: [
-              { role: 'system', content: systemPrompt },
-              { role: 'user', content: question },
-            ],
-          }),
-        });
+      for (const model of modelsToTry) {
+        try {
+          const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${apiKey}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              model,
+              temperature: 0.3,
+              max_tokens: 450,
+              messages: [
+                { role: 'system', content: systemPrompt },
+                { role: 'user', content: question },
+              ],
+            }),
+          });
+          if (res.ok) {
+            groqRes = res;
+            break;
+          } else {
+            console.warn(`[Copilot] Modelo ${model} falló con status ${res.status}`);
+          }
+        } catch (fetchErr) {
+          console.warn(`[Copilot] Error intentando con modelo ${model}:`, fetchErr);
+        }
       }
 
-      if (groqRes.ok) {
+      if (groqRes && groqRes.ok) {
         const groqData = await groqRes.json();
         const text = groqData.choices?.[0]?.message?.content;
         if (text) {
@@ -568,7 +564,7 @@ Instrucciones:
             ],
           };
         }
-      } else {
+      } else if (groqRes) {
         const errText = await groqRes.text();
         console.error('[Copilot] Groq API error response:', errText);
       }
