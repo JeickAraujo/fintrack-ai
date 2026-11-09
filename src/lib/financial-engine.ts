@@ -189,3 +189,65 @@ export async function recalculateAllUserAccounts(userId: string): Promise<void> 
     await recalculateAccountBalance(acc.id);
   }
 }
+
+/**
+ * Resuelve o crea automáticamente la cuenta bancaria / billetera / efectivo correspondiente
+ * asegurando que si se menciona "efectivo", NUNCA se asigne a Nequi u otra cuenta.
+ */
+export async function resolveOrCreateTargetAccount(
+  userId: string,
+  methodOrName?: string
+): Promise<{ id: string; name: string } | null> {
+  const method = (methodOrName || '').toLowerCase().trim();
+  const now = new Date().toISOString();
+
+  // 1. Si el usuario especificó "efectivo"
+  if (method === 'efectivo' || method.includes('efectivo')) {
+    let acc = await queryOne<{ id: string; name: string }>(
+      `SELECT id, name FROM accounts WHERE user_id = ? AND is_active = true AND (LOWER(name) LIKE '%efectivo%' OR type = 'CASH') LIMIT 1`,
+      [userId]
+    );
+    if (!acc) {
+      // Auto-crear cuenta de Efectivo si no existe
+      const newAccId = crypto.randomUUID();
+      await execute(
+        `INSERT INTO accounts (id, user_id, name, type, initial_balance_cents, current_balance_cents, color, is_active, created_at)
+         VALUES (?, ?, 'Efectivo', 'CASH', 0, 0, '#10b981', true, ?)`,
+        [newAccId, userId, now]
+      );
+      acc = { id: newAccId, name: 'Efectivo' };
+    }
+    return acc;
+  }
+
+  // 2. Si el usuario especificó otro método o cuenta (Nequi, Daviplata, Bancolombia, etc.)
+  if (method) {
+    let acc = await queryOne<{ id: string; name: string }>(
+      `SELECT id, name FROM accounts WHERE user_id = ? AND is_active = true AND LOWER(name) LIKE ? LIMIT 1`,
+      [userId, `%${method}%`]
+    );
+
+    // Auto-crear Nequi o Daviplata si no existen
+    if (!acc && ['nequi', 'daviplata'].includes(method)) {
+      const newAccId = crypto.randomUUID();
+      const accName = method.charAt(0).toUpperCase() + method.slice(1);
+      const accColor = method === 'nequi' ? '#e11d48' : '#dc2626';
+      await execute(
+        `INSERT INTO accounts (id, user_id, name, type, initial_balance_cents, current_balance_cents, color, is_active, created_at)
+         VALUES (?, ?, ?, 'CHECKING', 0, 0, ?, true, ?)`,
+        [newAccId, userId, accName, accColor, now]
+      );
+      acc = { id: newAccId, name: accName };
+    }
+
+    if (acc) return acc;
+  }
+
+  // 3. Si no se especificó nada (o no se encontró), usar la cuenta activa con mayor saldo disponible
+  const topAcc = await queryOne<{ id: string; name: string }>(
+    `SELECT id, name FROM accounts WHERE user_id = ? AND is_active = true ORDER BY current_balance_cents DESC LIMIT 1`,
+    [userId]
+  );
+
+  return topAcc;
+}

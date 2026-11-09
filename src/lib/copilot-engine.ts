@@ -1,7 +1,7 @@
 import crypto from 'crypto';
 import { queryAll, queryOne, execute } from './db';
 import { formatCurrency, centsToDollars } from './currency';
-import { getDashboardMetrics, getBogotaCurrentMonth, recalculateAccountBalance } from './financial-engine';
+import { getDashboardMetrics, getBogotaCurrentMonth, recalculateAccountBalance, resolveOrCreateTargetAccount } from './financial-engine';
 import { parseNaturalLanguageInput, parseNaturalLanguageWithAI } from './nlp-parser';
 
 export interface CopilotResponse {
@@ -87,7 +87,7 @@ export async function getFullFinancialContext(userId: string, currentMonth: stri
       `SELECT c.name, COALESCE(SUM(t.amount_cents), 0) as total
        FROM transactions t
        JOIN categories c ON t.category_id = c.id
-       WHERE t.user_id = ? AND t.type IN ('EXPENSE', 'CREDIT_PURCHASE') AND t.date::text LIKE ?
+       WHERE t.user_id = ? AND t.type IN ('EXPENSE', 'CREDIT_PURCHASE') AND t.date LIKE ?
        GROUP BY c.id, c.name
        ORDER BY total DESC`,
       [userId, `${currentMonth}%`]
@@ -109,7 +109,7 @@ export async function getFullFinancialContext(userId: string, currentMonth: stri
       `SELECT c.name, b.allocated_cents,
               COALESCE((SELECT SUM(amount_cents) FROM transactions 
                         WHERE user_id = b.user_id AND category_id = b.category_id 
-                          AND type IN ('EXPENSE', 'CREDIT_PURCHASE') AND date::text LIKE ?), 0) as spent_cents
+                          AND type IN ('EXPENSE', 'CREDIT_PURCHASE') AND date LIKE ?), 0) as spent_cents
        FROM budgets b
        JOIN categories c ON b.category_id = c.id
        WHERE b.user_id = ? AND b.month_year = ?`,
@@ -588,32 +588,7 @@ export async function askCopilot(userId: string, question: string, currency: str
         }
 
         // D. MOVIMIENTO HABITUAL (GASTO / INGRESO)
-        let targetAccount: { id: string; name: string } | null = null;
-        if (item.paymentMethod && item.paymentMethod.toLowerCase() !== 'efectivo') {
-          targetAccount = await queryOne<{ id: string; name: string }>(
-            `SELECT id, name FROM accounts WHERE user_id = ? AND is_active = true AND LOWER(name) LIKE ? LIMIT 1`,
-            [userId, `%${item.paymentMethod.toLowerCase()}%`]
-          );
-        }
-
-        if (!targetAccount && item.paymentMethod && ['nequi', 'daviplata'].includes(item.paymentMethod.toLowerCase())) {
-          const newAccId = crypto.randomUUID();
-          const accName = item.paymentMethod.charAt(0).toUpperCase() + item.paymentMethod.slice(1);
-          const accColor = item.paymentMethod.toLowerCase() === 'nequi' ? '#e11d48' : '#dc2626';
-          await execute(
-            `INSERT INTO accounts (id, user_id, name, type, initial_balance_cents, current_balance_cents, color, is_active, created_at)
-             VALUES (?, ?, ?, 'CHECKING', 0, 0, ?, true, ?)`,
-            [newAccId, userId, accName, accColor, now]
-          );
-          targetAccount = { id: newAccId, name: accName };
-        }
-
-        if (!targetAccount) {
-          targetAccount = await queryOne<{ id: string; name: string }>(
-            `SELECT id, name FROM accounts WHERE user_id = ? AND is_active = true ORDER BY current_balance_cents DESC LIMIT 1`,
-            [userId]
-          );
-        }
+        const targetAccount = await resolveOrCreateTargetAccount(userId, item.paymentMethod || item.accountName);
 
         if (targetAccount) {
           const txId = crypto.randomUUID();

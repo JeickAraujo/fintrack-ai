@@ -5,7 +5,7 @@ import { getSessionFromRequest } from '@/lib/auth';
 import { parseNaturalLanguageWithAI, parseBankNotification } from '@/lib/nlp-parser';
 import { parseBankCsv as executeCsvImport } from '@/lib/csv-importer';
 import { execute, queryAll, queryOne } from '@/lib/db';
-import { recalculateAccountBalance } from '@/lib/financial-engine';
+import { recalculateAccountBalance, resolveOrCreateTargetAccount } from '@/lib/financial-engine';
 
 export async function POST(req: Request) {
   const session = await getSessionFromRequest(req);
@@ -42,26 +42,10 @@ export async function POST(req: Request) {
 
         // B. Resolver cuenta para transacciones o cuentas
         const methodOrAcc = item.accountName || item.paymentMethod;
-        if (methodOrAcc && methodOrAcc.toLowerCase() !== 'efectivo') {
-          let acc = await queryOne<{ id: string; name: string }>(
-            `SELECT id, name FROM accounts WHERE user_id = ? AND is_active = true AND LOWER(name) LIKE ? LIMIT 1`,
-            [session.id, `%${methodOrAcc.toLowerCase()}%`]
-          );
-          if (!acc && ['nequi', 'daviplata'].includes(methodOrAcc.toLowerCase())) {
-            const newAccId = crypto.randomUUID();
-            const accName = methodOrAcc.charAt(0).toUpperCase() + methodOrAcc.slice(1);
-            const accColor = methodOrAcc.toLowerCase() === 'nequi' ? '#e11d48' : '#dc2626';
-            await execute(
-              `INSERT INTO accounts (id, user_id, name, type, initial_balance_cents, current_balance_cents, color, is_active, created_at)
-               VALUES (?, ?, ?, 'CHECKING', 0, 0, ?, true, ?)`,
-              [newAccId, session.id, accName, accColor, new Date().toISOString()]
-            );
-            acc = { id: newAccId, name: accName };
-          }
-          if (acc) {
-            item.suggestedAccountId = acc.id;
-            item.accountName = acc.name;
-          }
+        const acc = await resolveOrCreateTargetAccount(session.id, methodOrAcc);
+        if (acc) {
+          item.suggestedAccountId = acc.id;
+          item.accountName = acc.name;
         }
       }
 

@@ -5,7 +5,7 @@ import { queryOne, queryAll, execute } from '@/lib/db';
 import { formatCurrency, centsToDollars } from '@/lib/currency';
 import { parseNaturalLanguageWithAI } from '@/lib/nlp-parser';
 import { askCopilot } from '@/lib/copilot-engine';
-import { recalculateAccountBalance } from '@/lib/financial-engine';
+import { recalculateAccountBalance, resolveOrCreateTargetAccount } from '@/lib/financial-engine';
 import {
   getTelegramBotToken,
   sendTelegramMessage,
@@ -400,32 +400,7 @@ export async function POST(req: Request) {
       }
 
       // D. MOVIMIENTO HABITUAL (GASTO / INGRESO)
-      let targetAccount: { id: string; name: string } | null = null;
-      if (item.paymentMethod && item.paymentMethod.toLowerCase() !== 'efectivo') {
-        targetAccount = await queryOne<{ id: string; name: string }>(
-          `SELECT id, name FROM accounts WHERE user_id = ? AND is_active = true AND LOWER(name) LIKE ? LIMIT 1`,
-          [user.id, `%${item.paymentMethod.toLowerCase()}%`]
-        );
-      }
-
-      if (!targetAccount && item.paymentMethod && ['nequi', 'daviplata'].includes(item.paymentMethod.toLowerCase())) {
-        const newAccId = crypto.randomUUID();
-        const accName = item.paymentMethod.charAt(0).toUpperCase() + item.paymentMethod.slice(1);
-        const accColor = item.paymentMethod.toLowerCase() === 'nequi' ? '#e11d48' : '#dc2626';
-        await execute(
-          `INSERT INTO accounts (id, user_id, name, type, initial_balance_cents, current_balance_cents, color, is_active, created_at)
-           VALUES (?, ?, ?, 'CHECKING', 0, 0, ?, true, ?)`,
-          [newAccId, user.id, accName, accColor, now]
-        );
-        targetAccount = { id: newAccId, name: accName };
-      }
-
-      if (!targetAccount) {
-        targetAccount = await queryOne<{ id: string; name: string }>(
-          `SELECT id, name FROM accounts WHERE user_id = ? AND is_active = true ORDER BY current_balance_cents DESC LIMIT 1`,
-          [user.id]
-        );
-      }
+      const targetAccount = await resolveOrCreateTargetAccount(user.id, item.paymentMethod || item.accountName);
 
       if (targetAccount) {
         let categoryId: string | null = null;
