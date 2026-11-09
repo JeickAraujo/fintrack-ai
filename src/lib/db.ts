@@ -60,10 +60,13 @@ async function ensurePostgresConstraints(pool: Pool): Promise<void> {
               FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
           END IF;
 
-          -- 3. Asegurar que las categorías de usuarios específicos no se consideren globales del sistema
+          -- 3. Asegurar columna telegram_chat_id en users
+          ALTER TABLE public.users ADD COLUMN IF NOT EXISTS telegram_chat_id TEXT;
+
+          -- 4. Asegurar que las categorías de usuarios específicos no se consideren globales del sistema
           UPDATE public.categories SET is_system = false WHERE user_id IS NOT NULL AND is_system = true;
 
-          -- 4. Deduplicar categorías idénticas para cada usuario
+          -- 5. Deduplicar categorías idénticas para cada usuario
           FOR dup IN (
             SELECT user_id, LOWER(name) as lower_name, type, MIN(id) as keep_id
             FROM public.categories
@@ -124,6 +127,7 @@ function initMemorySchema(db: SqlJsDatabase): void {
       email TEXT UNIQUE NOT NULL,
       password_hash TEXT NOT NULL,
       currency TEXT NOT NULL DEFAULT 'COP',
+      telegram_chat_id TEXT,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );

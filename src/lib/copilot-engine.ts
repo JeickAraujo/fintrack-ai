@@ -639,8 +639,8 @@ Instrucciones:
 4. No inventes transacciones ni datos inexistentes.`;
 
       const apiKey = process.env.GROQ_API_KEY.trim();
-      // En Groq los modelos compatibles son openai/gpt-oss-120b y openai/gpt-oss-20b
-      const modelsToTry = ['openai/gpt-oss-120b', 'openai/gpt-oss-20b', 'qwen/qwen3.8-27b'];
+      // En Groq los modelos compatibles son llama-3.3-70b-versatile y llama-3.1-8b-instant
+      const modelsToTry = ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant'];
       let groqRes: Response | null = null;
 
       for (const model of modelsToTry) {
