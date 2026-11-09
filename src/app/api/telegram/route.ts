@@ -42,21 +42,18 @@ export async function GET(req: Request) {
   const groqKey = process.env.GROQ_API_KEY?.trim();
   if (groqKey) {
     try {
-      const gRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-        method: 'POST',
+      const gRes = await fetch('https://api.groq.com/openai/v1/models', {
+        method: 'GET',
         headers: {
           'Authorization': `Bearer ${groqKey}`,
-          'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          model: 'llama-3.1-8b-instant',
-          messages: [{ role: 'user', content: 'test' }],
-          max_tokens: 5,
-        }),
       });
-      groqStatus = `HTTP ${gRes.status} ${gRes.statusText}`;
-      if (!gRes.ok) {
-        groqStatus += ` - ${await gRes.text()}`;
+      if (gRes.ok) {
+        const mData = await gRes.json();
+        const modelIds = (mData.data || []).map((m: any) => m.id);
+        groqStatus = 'Modelos disponibles: ' + modelIds.join(', ');
+      } else {
+        groqStatus = `HTTP ${gRes.status} - ${await gRes.text()}`;
       }
     } catch (e: any) {
       groqStatus = `Excepción: ${e.message}`;
