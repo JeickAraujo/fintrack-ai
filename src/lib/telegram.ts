@@ -82,7 +82,8 @@ export async function downloadTelegramFile(fileId: string): Promise<{ buffer: Bu
 
     const arrayBuffer = await downloadRes.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
-    const fileName = filePath.split('/').pop() || 'voice.oga';
+    const rawName = filePath.split('/').pop() || 'voice.ogg';
+    const fileName = rawName.replace(/\.oga$/i, '.ogg');
     return { buffer, fileName };
   } catch (err) {
     console.error('[Telegram] Error descargando archivo de audio:', err);
@@ -93,16 +94,18 @@ export async function downloadTelegramFile(fileId: string): Promise<{ buffer: Bu
 /**
  * Transcribe un archivo de audio con Groq Whisper en tiempo récord
  */
-export async function transcribeAudioWithGroq(audioBuffer: Buffer, fileName: string = 'voice.oga'): Promise<string> {
+export async function transcribeAudioWithGroq(audioBuffer: Buffer, fileName: string = 'voice.ogg'): Promise<string> {
   const apiKey = process.env.GROQ_API_KEY?.trim();
   if (!apiKey) {
     throw new Error('GROQ_API_KEY no configurado para transcripción de voz');
   }
 
   // Usar FormData nativo
+  // Groq exige explícitamente extensiones como .ogg, .mp3, .wav (Telegram usa .oga internamente)
+  const safeFileName = fileName.replace(/\.oga$/i, '.ogg');
   const formData = new FormData();
   const blob = new Blob([audioBuffer], { type: 'audio/ogg' });
-  formData.append('file', blob, fileName);
+  formData.append('file', blob, safeFileName);
   formData.append('model', 'whisper-large-v3-turbo');
   formData.append('language', 'es');
   formData.append('temperature', '0.0');
