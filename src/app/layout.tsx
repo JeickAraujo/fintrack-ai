@@ -3,7 +3,7 @@ import type { Metadata, Viewport } from 'next';
 
 export const metadata: Metadata = {
   title: 'FinTrack AI — Administrador Financiero Inteligente',
-  description: 'Control financiero personal, detección inteligente de gastos, presupuestos y asistente copilot.',
+  description: 'Control financiero personal, detección inteligente de gastos, presupuestos y FinTrack Asistente IA.',
   manifest: '/manifest.json',
   appleWebApp: {
     capable: true,

@@ -16,7 +16,7 @@ export default function CopilotPage() {
     {
       role: 'assistant',
       content:
-        '¡Hola! Soy **FinTrack Copilot**, tu asistente financiero inteligente. Consulto tus saldos reales, presupuestos y movimientos en tiempo real para darte análisis cuantificados y responder cualquier inquietud.',
+        '¡Hola! Soy **FinTrack Asistente IA**, tu asistente financiero inteligente. Consulto tus saldos reales, presupuestos y movimientos en tiempo real para darte análisis cuantificados y responder cualquier inquietud.',
       actions: [
         '¿En qué gasté más este mes?',
         '¿Cuánto dinero puedo gastar hasta fin de mes?',
@@ -77,7 +77,7 @@ export default function CopilotPage() {
               <Sparkles className="w-5 h-5" />
             </div>
             <div>
-              <h1 className="text-lg sm:text-xl font-black text-white">FinTrack Copilot</h1>
+              <h1 className="text-lg sm:text-xl font-black text-white">FinTrack Asistente IA</h1>
               <p className="text-[11px] sm:text-xs text-slate-400">
                 Consultas deterministas basadas en tus datos financieros reales
               </p>

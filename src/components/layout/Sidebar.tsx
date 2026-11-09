@@ -24,7 +24,7 @@ const navItems = [
   { name: 'Obligaciones y Pagos', href: '/obligations', icon: CalendarClock },
   { name: 'Presupuestos', href: '/budgets', icon: PiggyBank },
   { name: 'Cuentas y Deudas', href: '/accounts', icon: Wallet },
-  { name: 'FinTrack Copilot', href: '/copilot', icon: Sparkles, badge: 'IA' },
+  { name: 'FinTrack Asistente IA', href: '/copilot', icon: Sparkles, badge: 'IA' },
   { name: 'Importar Extracto', href: '/import', icon: FileSpreadsheet },
   { name: 'Informes y CSV', href: '/reports', icon: FileText },
 ];

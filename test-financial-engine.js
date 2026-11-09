@@ -159,7 +159,7 @@ assert.strictEqual(importedCountPass2, 2, 'Segundo pase debe detectar las 2 fila
 console.log('   ✓ Algoritmo de hash y deduplicación robusto verificado.');
 
 // 5. Pruebas de Normalización y Reconocimiento de Intenciones del Copilot
-console.log('\n5. Verificando normalización y respuestas del FinTrack Copilot...');
+console.log('\n5. Verificando normalización y respuestas de FinTrack Asistente IA...');
 function normalizeQuery(text) {
   return text
     .toLowerCase()

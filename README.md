@@ -26,7 +26,7 @@ npm run start
 La aplicación estará disponible en `http://localhost:3000`.
 
 ### 3. Ejecutar Pruebas Automatizadas
-Para correr la suite de pruebas unitarias que verifican precisión aritmética, deduplicación criptográfica, parsing NLP y las intenciones del Copilot:
+Para correr la suite de pruebas unitarias que verifican precisión aritmética, deduplicación criptográfica, parsing NLP y las intenciones de FinTrack Asistente IA:
 ```bash
 npm test
 ```
@@ -59,7 +59,7 @@ npm test
 6. **Presupuestos Mensuales:**
    - Seguimiento por categoría con barras de consumo y cálculo de remanentes o sobrecostos.
 
-7. **FinTrack Copilot (Asistente Financiero Cuantificado):**
+7. **FinTrack Asistente IA (Asistente Financiero Cuantificado):**
    - Normalización de consultas (sin tildes ni puntuación).
    - Intenciones reales: mayor gasto, saldo por cuenta, presupuestos excedidos, próximos pagos, suscripciones, comparación con el mes anterior y ayuda interactiva.
    - Mensaje explícito con sugerencias válidas ante preguntas no reconocidas.

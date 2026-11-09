@@ -43,7 +43,7 @@ export async function askCopilot(userId: string, question: string, currency: str
     norm.includes('comandos')
   ) {
     return {
-      answer: `Soy **FinTrack Copilot**, tu copiloto financiero inteligente. Analizo tus transacciones y cuentas en tiempo real.\n\nPuedes preguntarme:\n- **"¿En qué gasté más este mes?"** o **"Gasto por categorías"**\n- **"¿Cuál es mi saldo por cuenta?"** o **"Mis cuentas"**\n- **"¿Cuánto puedo gastar hasta fin de mes?"**\n- **"¿Qué presupuestos tengo excedidos?"**\n- **"¿Cuáles son mis próximos pagos o vencimientos?"**\n- **"¿Qué suscripciones estoy pagando?"**\n- **"¿Cómo voy comparado con el mes anterior?"**\n- **"¿Cuál es mi ahorro o flujo de efectivo?"**`,
+      answer: `Soy **FinTrack Asistente IA**, tu asistente financiero inteligente. Analizo tus transacciones y cuentas en tiempo real.\n\nPuedes preguntarme:\n- **"¿En qué gasté más este mes?"** o **"Gasto por categorías"**\n- **"¿Cuál es mi saldo por cuenta?"** o **"Mis cuentas"**\n- **"¿Cuánto puedo gastar hasta fin de mes?"**\n- **"¿Qué presupuestos tengo excedidos?"**\n- **"¿Cuáles son mis próximos pagos o vencimientos?"**\n- **"¿Qué suscripciones estoy pagando?"**\n- **"¿Cómo voy comparado con el mes anterior?"**\n- **"¿Cuál es mi ahorro o flujo de efectivo?"**`,
       suggestedActions: [
         '¿En qué gasté más este mes?',
         '¿Cuál es mi saldo por cuenta?',
@@ -138,7 +138,7 @@ export async function askCopilot(userId: string, question: string, currency: str
               item.date,
               item.description,
               item.paymentMethod || 'Efectivo',
-              `Registrado por FinTrack Copilot: "${question}"`,
+              `Registrado por FinTrack Asistente IA: "${question}"`,
               now,
             ]
           );
@@ -502,7 +502,7 @@ export async function askCopilot(userId: string, question: string, currency: str
         console.warn('[Copilot] No se pudieron obtener obligaciones para Groq:', bErr);
       }
 
-      const systemPrompt = `Eres FinTrack Copilot, un asesor financiero personal experto, empático y cuantitativo para usuarios en Colombia.
+      const systemPrompt = `Eres FinTrack Asistente IA, un asesor financiero personal experto, empático y cuantitativo para usuarios en Colombia.
 Tienes acceso a los datos financieros REALES del usuario para el mes ${currentMonth} (Moneda: ${currency}):
 - Saldo total disponible: ${formatCurrency(metrics.totalBalanceCents, currency)}
 - Ingresos de este mes: ${formatCurrency(metrics.monthlyIncomeCents, currency)}
@@ -596,7 +596,7 @@ Instrucciones:
           messages: [
             {
               role: 'user',
-              content: `Eres FinTrack Copilot, asistente financiero. Datos reales del usuario para ${currentMonth} (Moneda: ${currency}):
+              content: `Eres FinTrack Asistente IA, asistente financiero. Datos reales del usuario para ${currentMonth} (Moneda: ${currency}):
 - Saldo: ${formatCurrency(metrics.totalBalanceCents, currency)}
 - Ingresos: ${formatCurrency(metrics.monthlyIncomeCents, currency)}
 - Gastos: ${formatCurrency(metrics.monthlyExpenseCents, currency)}

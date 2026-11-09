@@ -193,7 +193,7 @@ export default function DashboardPage() {
               className="inline-flex items-center gap-2 px-3.5 sm:px-4 py-2 sm:py-2.5 rounded-xl bg-slate-900 border border-slate-700 hover:border-emerald-500/50 text-slate-200 hover:text-white transition-all text-xs sm:text-sm font-medium shadow-sm flex-1 sm:flex-initial justify-center"
             >
               <Sparkles className="w-4 h-4 text-emerald-400" />
-              <span>Copilot IA</span>
+              <span>Asistente IA</span>
             </Link>
             <Link
               href="/transactions"
