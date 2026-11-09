@@ -566,7 +566,183 @@ export async function askCopilot(userId: string, question: string, currency: str
     };
   }
 
+    // =========================================================================
+  // INTENCIÓN 9: OPINIÓN, ANÁLISIS Y CONSEJOS SOBRE GASTOS Y FINANZAS
   // =========================================================================
+  const isOpinionQuery =
+    norm.includes('que opinas') ||
+    norm.includes('tu opinion') ||
+    norm.includes('que piensas') ||
+    norm.includes('como voy') ||
+    norm.includes('como van mis') ||
+    norm.includes('analisis') ||
+    norm.includes('diagnostico') ||
+    norm.includes('consejo') ||
+    norm.includes('recomendacion') ||
+    norm.includes('como ves mis') ||
+    norm.includes('como estan mis') ||
+    norm.includes('estoy gastando');
+
+  if (isOpinionQuery) {
+    let metrics = {
+      totalBalanceCents: 0,
+      monthlyIncomeCents: 0,
+      monthlyExpenseCents: 0,
+      monthlyCashFlowCents: 0,
+      committedObligationsCents: 0,
+      savingsRatePercentage: 0,
+    };
+
+    try {
+      metrics = await getDashboardMetrics(userId, currentMonth);
+    } catch (mErr) {
+      console.warn('[Copilot] Error obteniendo métricas:', mErr);
+    }
+
+    let topCategories: { name: string; total: number }[] = [];
+    let topCatsText = '- Sin gastos registrados aún este mes';
+    try {
+      topCategories = await queryAll<{ name: string; total: number }>(
+        `SELECT c.name, COALESCE(SUM(t.amount_cents), 0) as total
+         FROM transactions t
+         JOIN categories c ON t.category_id = c.id
+         WHERE t.user_id = ? AND t.type IN ('EXPENSE', 'CREDIT_PURCHASE') AND t.date::text LIKE ?
+         GROUP BY c.id, c.name ORDER BY total DESC LIMIT 3`,
+        [userId, `${currentMonth}%`]
+      );
+      if (topCategories.length > 0) {
+        topCatsText = topCategories.map((c) => `- ${c.name}: ${formatCurrency(c.total, currency)}`).join('\n');
+      }
+    } catch (cErr) {
+      console.warn('[Copilot] Error obteniendo topCategories:', cErr);
+    }
+
+    let pendingBills: { name: string; amount_cents: number; due_date: string }[] = [];
+    let pendingBillsText = '- No tienes pagos pendientes';
+    try {
+      pendingBills = await queryAll<{ name: string; amount_cents: number; due_date: string }>(
+        `SELECT name, amount_cents, due_date FROM payment_obligations
+         WHERE user_id = ? AND status = 'PENDING' ORDER BY due_date ASC LIMIT 3`,
+        [userId]
+      );
+      if (pendingBills.length > 0) {
+        pendingBillsText = pendingBills.map((b) => `- ${b.name}: ${formatCurrency(b.amount_cents, currency)} (Vence: ${b.due_date})`).join('\n');
+      }
+    } catch (bErr) {
+      console.warn('[Copilot] Error obteniendo obligaciones:', bErr);
+    }
+
+    // 1. Intentar con Groq AI usando los modelos activos en la cuenta (openai/gpt-oss-120b, openai/gpt-oss-20b)
+    const apiKey = process.env.GROQ_API_KEY?.trim();
+    if (apiKey) {
+      const systemPrompt = `Eres FinTrack Asistente IA, un asesor financiero personal experto, empático y cuantitativo para usuarios en Colombia.
+Tienes acceso a los datos financieros REALES del usuario para el mes ${currentMonth} (Moneda: ${currency}):
+- Saldo total disponible: ${formatCurrency(metrics.totalBalanceCents, currency)}
+- Ingresos de este mes: ${formatCurrency(metrics.monthlyIncomeCents, currency)}
+- Gastos de este mes: ${formatCurrency(metrics.monthlyExpenseCents, currency)}
+- Flujo de caja neto: ${formatCurrency(metrics.monthlyCashFlowCents, currency)}
+- Compromisos u obligaciones pendientes: ${formatCurrency(metrics.committedObligationsCents, currency)}
+- Tasa de ahorro actual: ${metrics.savingsRatePercentage}%
+- Categorías con mayor gasto:
+${topCatsText}
+- Próximos vencimientos de pago:
+${pendingBillsText}
+
+Instrucciones:
+1. Responde de manera clara, concisa, profesional y en español formal-amable usando formato Markdown con viñetas.
+2. Basa tus observaciones y opiniones estrictamente en estas cifras reales.
+3. Si el usuario te pide consejos o análisis sobre sus gastos o situación, dale recomendaciones prácticas y cuantificadas sobre sus números actuales.
+4. No inventes transacciones ni datos inexistentes.`;
+
+      const modelsToTry = ['openai/gpt-oss-120b', 'openai/gpt-oss-20b', 'qwen/qwen3.8-27b'];
+      for (const model of modelsToTry) {
+        try {
+          const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${apiKey}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              model,
+              temperature: 0.3,
+              max_tokens: 500,
+              messages: [
+                { role: 'system', content: systemPrompt },
+                { role: 'user', content: question },
+              ],
+            }),
+          });
+          if (res.ok) {
+            const data = await res.json();
+            const text = data.choices?.[0]?.message?.content?.trim();
+            if (text) {
+              return {
+                answer: text,
+                suggestedActions: [
+                  '¿En qué gasté más este mes?',
+                  '¿Cuál es mi saldo por cuenta?',
+                  '¿Qué presupuestos tengo excedidos?',
+                  '¿Cuáles son mis próximos vencimientos?',
+                ],
+              };
+            }
+          } else {
+            console.warn(`[Copilot-Opinion] Groq ${model} falló con status ${res.status}:`, await res.text().catch(() => ''));
+          }
+        } catch (groqErr) {
+          console.warn('[Copilot-Opinion] Error conectando a Groq:', groqErr);
+        }
+      }
+    }
+
+    // 2. Fallback Determinista Cuantitativo de Alta Calidad (si Groq no responde)
+    let healthBadge = '🟢 **Salud Financiera Positiva**';
+    let diagnosis = '';
+
+    if (metrics.monthlyIncomeCents === 0 && metrics.monthlyExpenseCents === 0) {
+      diagnosis = `Aún no registras ingresos ni gastos este mes (${currentMonth}). Cuando empieces a registrar tus movimientos diarios o importes tu extracto bancario, podré darte análisis detallados de tu flujo de caja.`;
+    } else if (metrics.monthlyIncomeCents === 0 && metrics.monthlyExpenseCents > 0) {
+      healthBadge = '⚠️ **Solo Egresos Registrados**';
+      diagnosis = `Llevas un acumulado de **${formatCurrency(metrics.monthlyExpenseCents, currency)}** en gastos durante ${currentMonth}, pero aún no has registrado tus ingresos del mes. Te sugiero anotar tus ingresos para calcular tu tasa de ahorro real.`;
+    } else if (metrics.monthlyCashFlowCents < 0) {
+      healthBadge = '🔴 **Atención a tu Flujo de Caja**';
+      const deficit = Math.abs(metrics.monthlyCashFlowCents);
+      diagnosis = `Tus gastos del mes (**${formatCurrency(metrics.monthlyExpenseCents, currency)}**) están superando a tus ingresos (**${formatCurrency(metrics.monthlyIncomeCents, currency)}**) por **${formatCurrency(deficit, currency)}**. Es prioritario reducir compras discrecionales para mantener un flujo positivo.`;
+    } else if (metrics.savingsRatePercentage >= 20) {
+      healthBadge = '🟢 **Salud Financiera Excelente**';
+      diagnosis = `¡Vas por excelente camino! Estás ahorrando el **${metrics.savingsRatePercentage}%** de tus ingresos (${formatCurrency(metrics.monthlyCashFlowCents, currency)} netos), superando el estándar recomendado del 20%.`;
+    } else {
+      healthBadge = '🟡 **Salud Financiera Moderada**';
+      diagnosis = `Estás logrando un ahorro del **${metrics.savingsRatePercentage}%** (${formatCurrency(metrics.monthlyCashFlowCents, currency)} netos). Tu margen es positivo pero ajustado; revisar tus mayores rubros de gasto te permitirá elevar tu ahorro.`;
+    }
+
+    let topCatDetail = '';
+    if (topCategories.length > 0) {
+      topCatDetail = `\n\n**Tus mayores focos de gasto este mes:**\n` +
+        topCategories.map((c) => `- **${c.name}:** ${formatCurrency(c.total, currency)}`).join('\n');
+    }
+
+    let billsDetail = '';
+    if (pendingBills.length > 0) {
+      billsDetail = `\n\n**Próximos compromisos por pagar:**\n` +
+        pendingBills.map((b) => `- **${b.name}:** ${formatCurrency(b.amount_cents, currency)} (Vence: ${b.due_date})`).join('\n');
+    }
+
+    const answer = `${healthBadge}\n\n${diagnosis}\n\n**Resumen financiero del mes (${currentMonth}):**\n- **Saldo total disponible:** ${formatCurrency(metrics.totalBalanceCents, currency)}\n- **Ingresos del mes:** ${formatCurrency(metrics.monthlyIncomeCents, currency)}\n- **Gastos del mes:** ${formatCurrency(metrics.monthlyExpenseCents, currency)}\n- **Flujo de caja neto:** ${formatCurrency(metrics.monthlyCashFlowCents, currency)}\n- **Obligaciones pendientes:** ${formatCurrency(metrics.committedObligationsCents, currency)}${topCatDetail}${billsDetail}\n\n**Recomendaciones:**\n1. Mantén un seguimiento diario de tus gastos mayores.\n2. Asegura el respaldo de tus obligaciones pendientes antes de su vencimiento.\n3. Define presupuestos mensuales para fijar alertas tempranas.`;
+
+    return {
+      answer,
+      suggestedActions: [
+        '¿En qué gasté más este mes?',
+        '¿Cuál es mi saldo por cuenta?',
+        '¿Cuáles son mis próximos vencimientos?',
+        '¿Cuánto dinero puedo gastar hasta fin de mes?',
+      ],
+    };
+  }
+
+// =========================================================================
   // FALLBACK 1: GROQ AI (LLaMA 3.3 / LLaMA 3.1) CON CONTEXTO FINANCIERO REAL
   // =========================================================================
   if (process.env.GROQ_API_KEY) {
@@ -640,7 +816,7 @@ Instrucciones:
 
       const apiKey = process.env.GROQ_API_KEY.trim();
       // En Groq los modelos compatibles son llama-3.3-70b-versatile y llama-3.1-8b-instant
-      const modelsToTry = ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant'];
+      const modelsToTry = ['openai/gpt-oss-120b', 'openai/gpt-oss-20b', 'qwen/qwen3.8-27b'];
       let groqRes: Response | null = null;
 
       for (const model of modelsToTry) {

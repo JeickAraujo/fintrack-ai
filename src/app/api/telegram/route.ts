@@ -42,16 +42,21 @@ export async function GET(req: Request) {
   const groqKey = process.env.GROQ_API_KEY?.trim();
   if (groqKey) {
     try {
-      const gRes = await fetch('https://api.groq.com/openai/v1/models', {
-        method: 'GET',
+      const gRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+        method: 'POST',
         headers: {
           'Authorization': `Bearer ${groqKey}`,
+          'Content-Type': 'application/json',
         },
+        body: JSON.stringify({
+          model: 'openai/gpt-oss-120b',
+          messages: [{ role: 'user', content: 'Di hola en una sola palabra' }],
+          max_tokens: 10,
+        }),
       });
       if (gRes.ok) {
-        const mData = await gRes.json();
-        const modelIds = (mData.data || []).map((m: any) => m.id);
-        groqStatus = 'Modelos disponibles: ' + modelIds.join(', ');
+        const cData = await gRes.json();
+        groqStatus = 'OK: ' + cData.choices?.[0]?.message?.content;
       } else {
         groqStatus = `HTTP ${gRes.status} - ${await gRes.text()}`;
       }

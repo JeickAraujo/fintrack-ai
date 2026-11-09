@@ -209,7 +209,7 @@ export function parseNaturalLanguageInput(text: string): ParsedItem[] {
 export async function parseNaturalLanguageWithAI(text: string): Promise<ParsedItem[]> {
   const apiKey = process.env.GROQ_API_KEY?.trim();
   if (apiKey) {
-    const models = ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant'];
+    const models = ['openai/gpt-oss-120b', 'openai/gpt-oss-20b', 'qwen/qwen3.8-27b'];
     const systemPrompt = `Eres el extractor financiero inteligente de FinTrack AI para Colombia.
 Dado un texto del usuario en lenguaje natural, analiza la intención y extrae un array JSON de acciones estructuradas.
 Detecta cuál de las siguientes 4 intenciones ("intent") corresponde al texto:
